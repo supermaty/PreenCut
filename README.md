@@ -195,7 +195,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - Email: 1242727205@qq.com 
 - RedNote(小红书): [一去二三里](https://www.xiaohongshu.com/user/profile/60c4b6df000000000101eedd)
 - RedNote Group
-<img src="./docs/rednote_group.jpg" alt="RedNote Group" width="300" />
+<img src="./docs/rednote_group.png" alt="RedNote Group" width="300" />
 
 ## ⭐ Star History
 
