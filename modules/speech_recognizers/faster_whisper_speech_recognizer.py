@@ -1,4 +1,8 @@
 import faster_whisper
+import json
+import os
+import zhconv
+from datetime import datetime
 
 from modules.speech_recognizers.speech_recognizer import SpeechRecognizer
 
@@ -43,18 +47,32 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         print("load audio success")
         segments, info = self.model.transcribe(
             audio,
-            initial_prompt="Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence.",
+            initial_prompt="请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence.",
             word_timestamps=False,
             vad_filter=True,
             beam_size=self.beam_size
         )
+
         segment_list = []
+
+        # 读取 segment_list.json 文件
+        # json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', 'segment_list.json')
+        # with open(json_path, 'r', encoding='utf-8') as f:
+        #     segment_list = json.load(f)
+        
         for segment in segments:
+            simplified_text = zhconv.convert(segment.text, 'zh-cn')
             segment_list.append({
                 'start': float(f'{segment.start:.2f}'),
                 'end': float(f'{segment.end:.2f}'),
-                'text': segment.text
+                'text': simplified_text
             })
+
+        # 把segment_list写入到 segment_list.json 文件
+        json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', f'segment_list_{self.model_size}_{datetime.now().strftime("%Y%m%d%H%M%S")}.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(segment_list, f, ensure_ascii=False, indent=4)
+        
         # format result
         result = {"language": info.language, "segments": segment_list}
         return result

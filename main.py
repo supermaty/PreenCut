@@ -1,3 +1,8 @@
+import os
+# 必须在导入任何可能使用 torchaudio 的模块之前设置
+os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "0"
+os.environ['TORCHAUDIO_USE_SOUNDFILE'] = '1'
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
@@ -9,6 +14,7 @@ from web.api import router as api_router
 
 
 import logging
+
 
 # 屏蔽访问日志
 block_endpoints = "/"
@@ -66,4 +72,4 @@ app = gr.mount_gradio_app(app, gradio_app, path="")
 
 if __name__ == "__main__":
     # 启动应用
-    uvicorn.run(app, host="localhost", port=7860)
+    uvicorn.run(app, host="localhost", port=7850)

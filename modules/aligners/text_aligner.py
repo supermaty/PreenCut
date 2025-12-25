@@ -151,17 +151,48 @@ class TextAligner:
                     "segments": segments,
                 }
             from ctc_forced_aligner import (
-                load_audio,
+                # load_audio,  # 不导入 load_audio
                 generate_emissions,
                 preprocess_text,
                 get_alignments,
                 get_spans,
                 postprocess_results,
             )
+            import soundfile as sf
+            import torch
 
             alignment_model, alignment_tokenizer = self.model
-            audio_waveform = load_audio(audio_path, alignment_model.dtype,
-                                        alignment_model.device)
+            
+            # 完全使用 soundfile 加载音频，绕过 torchaudio
+            waveform, sample_rate = sf.read(audio_path)
+            
+            # soundfile.read() 返回格式：
+            # - 单声道: (length,) - 1D numpy array
+            # - 多声道: (channels, length) - 2D numpy array
+            
+            # 转换为单声道（如果需要）
+            if waveform.ndim == 2:
+                # 多声道，转换为单声道
+                waveform = waveform.mean(axis=0)  # 沿通道维度平均
+            elif waveform.ndim > 2:
+                # 异常情况，压缩到 1D
+                waveform = waveform.flatten()
+            
+            # 确保是 1D numpy array
+            assert waveform.ndim == 1, f"转换后应该是 1D，但得到 {waveform.ndim}D，形状: {waveform.shape}"
+            
+            # 转换为 torch tensor，保持 1D 格式: (length,)
+            # generate_emissions 内部会自己处理维度
+            audio_waveform = torch.from_numpy(waveform).to(
+                dtype=alignment_model.dtype,
+                device=alignment_model.device
+            )
+            
+            # 验证格式: 应该是 1D (length,)
+            assert audio_waveform.ndim == 1, f"音频张量应该是 1D (length,)，但得到 {audio_waveform.ndim}D，形状: {audio_waveform.shape}"
+            
+            print(f"音频加载成功: 形状={audio_waveform.shape}, dtype={audio_waveform.dtype}, device={audio_waveform.device}")
+
             text = process_ctc_text(segments, self.language_code,
                                     self.word_segmenter,
                                     self.max_line_length)

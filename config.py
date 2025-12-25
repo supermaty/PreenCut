@@ -1,6 +1,11 @@
 import os
 import torch
 
+
+os.environ["DEEPSEEK_V3_API_KEY"] = "sk-2015c68025e14d70810ad6144529cee6"
+os.environ["GOOGLE_API_KEY"] = "AIzaSyDAvt5Yfovx90nM_qZtqA4soYPbqyFIA1U"
+
+
 # 设置Gradio临时目录
 os.environ['GRADIO_TEMP_DIR'] = '/data/tmp/gradio'
 
@@ -52,7 +57,7 @@ SPEECH_RECOGNIZER_TYPE = 'faster-whisper'  # whisperx, faster-whisper
 
 DEVICE_TYPE, AVAILABLE_GPUS = get_device_config()
 # Whisper配置
-WHISPER_MODEL_SIZE = 'large-v2'  # 模型大小 (tiny, base, small, medium, large, large-v2, large-v3)
+WHISPER_MODEL_SIZE = 'large-v3-turbo'  # 模型大小 (tiny, base, small, medium, large, large-v2, large-v3, large-v3-turbo)
 WHISPER_DEVICE = DEVICE_TYPE
 WHISPER_GPU_IDS = AVAILABLE_GPUS
 WHISPER_COMPUTE_TYPE = 'float16' if WHISPER_DEVICE == 'cuda' else 'float32'  # float16, float32, int8
@@ -67,10 +72,17 @@ ALIGNMENT_MODEL = 'ctc-forced-aligner'  # 使用的对齐模型, whisperx, ctc-f
 # OpenAI API配置
 LLM_MODEL_OPTIONS = [
     {
-        "model": "deepseek-v3-0324",
-        "base_url": "https://api.lkeap.cloud.tencent.com/v1",
+        "model": "gemini-3-pro-preview",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "api_key_env_name": "GOOGLE_API_KEY",
+        "label": "gemini-3",
+        "max_tokens": 4096
+    },
+    {
+        "model": "deepseek-reasoner",
+        "base_url": "https://api.deepseek.com/v1",
         "api_key_env_name": "DEEPSEEK_V3_API_KEY",
-        "label": "DeepSeek-V3-0324",
+        "label": "deepseek-reasoner-v3.2",
         "max_tokens": 4096
     },
     {

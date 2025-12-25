@@ -184,4 +184,5 @@ cython_debug/
 .vscode
 .gradio
 temp
+segment-data
 

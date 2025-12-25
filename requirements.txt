@@ -1,12 +1,24 @@
 gradio==5.34.2
 faster-whisper==1.1.1
-ctranslate2==4.4.0
+ctranslate2==4.6.2
 ffmpeg-python==0.2.0
 openai==1.91.0
 fastapi==0.115.13
 soundfile==0.13.1
 jieba
-git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git@201276a4ea2ddd3f5caead1ac4f211477ae3da6d
---extra-index-url https://download.pytorch.org/whl/cu118
-torch==2.7.1+cu118
-torchaudio==2.7.1+cu118
+
+# git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git@201276a4ea2ddd3f5caead1ac4f211477ae3da6d
+# --extra-index-url https://download.pytorch.org/whl/cu128
+# torch==2.7.1+cu128
+# torchaudio==2.7.1+cu128
+
+
+# 本项目依赖需通过conda安装
+# conda activate preencut
+# pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+# 验证安装是否成功
+# python -c "import torch; print('CUDA可用:', torch.cuda.is_available()); print('架构列表:', torch.cuda.get_arch_list())"
+# pip install git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git@201276a4ea2ddd3f5caead1ac4f211477ae3da6d
+# pip install -r requirements.txt
+# pip install torchcodec
+# pip install zhconv

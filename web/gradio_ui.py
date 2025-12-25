@@ -259,8 +259,8 @@ def clip_and_download(status_display: Dict,
 
         # 找到对应的原始分段
         for original_seg in file_segments[filename]['segments']:
-            if abs(original_seg["start"] - start) < 0.5 and abs(
-                    original_seg["end"] - end) < 0.5:
+            if abs(original_seg["start"] - start) <= 0.5 and abs(
+                    original_seg["end"] - end) <= 0.5:
                 selected_clips.append({
                     "filename": filename,
                     "start": original_seg["start"],
@@ -309,21 +309,30 @@ def clip_and_download(status_display: Dict,
         combined_path = os.path.join(task_output_dir, f"combined_output{ext}")
 
         # 创建文件列表
-        with open(os.path.join(task_temp_dir, "combine_list.txt"), 'w') as f:
+        combine_list_path = os.path.join(task_temp_dir, "combine_list.txt")
+        with open(combine_list_path, 'w', encoding='utf-8') as f:
             for file in output_files:
-                f.write(f"file '../../{file}'\n")
+                # 使用绝对路径，并将 Windows 路径分隔符转换为正斜杠（FFmpeg 要求）
+                abs_file_path = os.path.abspath(file).replace('\\', '/')
+                f.write(f"file '{abs_file_path}'\n")
 
         # 合并视频
         cmd = [
             'ffmpeg', '-f', 'concat', '-safe', '0',
-            '-i', os.path.join(task_temp_dir, "combine_list.txt"),
+            '-i', combine_list_path,
             '-c', 'copy', combined_path
         ]
         try:
-            subprocess.run(cmd, check=True, capture_output=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            print(f"FFmpeg error: {e.stderr.decode('utf-8')}")
-            raise gr.Error(f"文件合并失败: {str(e)}")
+            error_msg = f"FFmpeg 错误 (返回码: {e.returncode}):\n"
+            error_msg += f"命令: {' '.join(cmd)}\n"
+            if e.stderr:
+                error_msg += f"错误输出: {e.stderr.decode('utf-8') if isinstance(e.stderr, bytes) else e.stderr}\n"
+            if e.stdout:
+                error_msg += f"标准输出: {e.stdout.decode('utf-8') if isinstance(e.stdout, bytes) else e.stdout}"
+            print(error_msg)
+            raise gr.Error(f"文件合并失败: {error_msg}")
 
         return combined_path
 
@@ -424,14 +433,15 @@ def create_gradio_interface():
                 )
 
                 with gr.Accordion("高级设置", open=False):
+                    gr.Markdown("王炸组合：Gemini-3 + temperature=1 + large-v3-turbo")
                     llm_model = gr.Dropdown(
                         choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="DeepSeek-V3-0324", label="大语言模型")
-                    temperature = gr.Slider(minimum=0.1, maximum=1, step=0.1,
-                                            value=0.3,
+                        value="gemini-3", label="大语言模型")
+                    temperature = gr.Slider(minimum=0.1, maximum=1.5, step=0.1,
+                                            value=1,
                                             label="摘要生成灵活度(temperature)")
                     model_size = gr.Dropdown(
-                        choices=["large-v2", "large-v3", "large", "medium",
+                        choices=["large-v3-turbo", "large-v3", "large-v2", "large", "medium",
                                  "small", "base", "tiny"],
                         value=WHISPER_MODEL_SIZE,
                         label="语音识别模型大小"
@@ -463,7 +473,7 @@ def create_gradio_interface():
                     result_table = gr.Dataframe(
                         headers=["文件名", "开始时间", "结束时间", "时长",
                                  "内容摘要", "标签"],
-                        datatype=["str", "str", "str", "str", "str", "str"],
+                        datatype=["str", "str", "str", "str", "str", "str", "str"],
                         interactive=True,
                         wrap=True
                     )
@@ -476,7 +486,7 @@ def create_gradio_interface():
                     )
                     reanalyze_llm_model = gr.Dropdown(
                         choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="DeepSeek-V3-0324", label="大语言模型")
+                        value="gemini-3", label="大语言模型")
                     reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1,
                                                      step=0.1, value=0.3,
                                                      label="摘要生成灵活度(temperature)")
