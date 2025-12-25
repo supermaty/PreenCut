@@ -481,7 +481,7 @@ def create_gradio_interface():
                 with gr.Tab("重新分析"):
                     new_prompt = gr.Textbox(
                         label="输入新的分析提示",
-                        placeholder="例如：找出所有包含技术术语的片段",
+                        placeholder="例如：找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。",
                         lines=2
                     )
                     reanalyze_llm_model = gr.Dropdown(

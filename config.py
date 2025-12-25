@@ -2,8 +2,6 @@ import os
 import torch
 
 
-os.environ["DEEPSEEK_V3_API_KEY"] = "sk-2015c68025e14d70810ad6144529cee6"
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDAvt5Yfovx90nM_qZtqA4soYPbqyFIA1U"
 
 
 # 设置Gradio临时目录
