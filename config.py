@@ -1,7 +1,13 @@
 import os
 import torch
+from dotenv import load_dotenv
 
+# 从 .env 文件加载环境变量
+load_dotenv()
 
+# API 密钥从环境变量或 .env 文件读取
+# 如果环境变量中不存在，则从 .env 文件中读取
+# 注意：.env 文件中的值会覆盖已存在的环境变量（除非设置 override=False）
 
 
 # 设置Gradio临时目录

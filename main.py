@@ -72,4 +72,4 @@ app = gr.mount_gradio_app(app, gradio_app, path="")
 
 if __name__ == "__main__":
     # 启动应用
-    uvicorn.run(app, host="localhost", port=7850)
+    uvicorn.run(app, host="localhost", port=7860)

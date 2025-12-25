@@ -5,6 +5,7 @@ ffmpeg-python==0.2.0
 openai==1.91.0
 fastapi==0.115.13
 soundfile==0.13.1
+python-dotenv
 jieba
 
 # git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git@201276a4ea2ddd3f5caead1ac4f211477ae3da6d

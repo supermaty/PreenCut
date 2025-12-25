@@ -458,7 +458,7 @@ def create_gradio_interface():
 
                 prompt_input = gr.Textbox(
                     label="自定义分析提示 (可选)",
-                    placeholder="例如：找出所有关于产品演示的片段",
+                    value="找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。特别指令：对于长段落的产品介绍，必须提取完整的中间讲述过程，严禁只截取开头结尾。执行策略为“宁多勿少”，凡是涉及该品牌或产品的上下文关联内容（包括铺垫和总结），请全部保留，确保内容完整性以供商务核算。",
                     lines=2
                 )
                 process_btn = gr.Button("开始处理", variant="primary")
@@ -487,8 +487,8 @@ def create_gradio_interface():
                     reanalyze_llm_model = gr.Dropdown(
                         choices=[model['label'] for model in LLM_MODEL_OPTIONS],
                         value="gemini-3", label="大语言模型")
-                    reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1,
-                                                     step=0.1, value=0.3,
+                    reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
+                                                     step=0.1, value=1,
                                                      label="摘要生成灵活度(temperature)")
                     reanalyze_btn = gr.Button("重新分析", variant="secondary")
 
