@@ -347,21 +347,24 @@
             <div class="section">
                 <h2>❓ 常见问题 (FAQ)</h2>
                 <div class="faq">
-                    <div class="faq-item">
+                    <div class="faq-item active">
                         <div class="faq-question">
                             遇到错误怎么办？
                         </div>
                         <div class="faq-answer">
                             如果遇到问题，请按以下步骤排查：<br><br>
                             <strong>1. 检查文件格式和大小</strong><br>
-                            确保文件格式在支持列表中，且文件大小不超过 10GB。<br><br>
+                            确保文件格式在支持列表中，且文件大小不超过 10GB。<br>
+                            确保文件时长不超过系统限制。<br><br>
                             <strong>2. 查看错误信息</strong><br>
-                            在界面的"处理状态"中查看详细的错误信息。
-                            如果错误信息为大模型格式错误，您可以在"重新分析"标签页中使用新的提示词重新分析，无需重新处理音频。<br><br>
-                            <strong>3. 联系支持</strong><br>
+                            在界面的"处理状态"中查看详细的错误信息。<br>
+                            如果错误信息为大模型格式错误(如：AttributeError: 'NoneType' object has no attribute 'startswith'错误)，您可以在"重新分析"标签页中使用新的提示词重新分析，无需重新处理音频。<br>
+                            如果遇到”没有可以重新分析的内容“，请点击“开始处理”按钮重新处理。
+                            <br><br>
+                            <strong>3. 联系技术支持</strong><br>
                             如果问题仍未解决，可以通过以下方式联系：<br>
-                            • 邮箱：matianye@goodideamedia.com<br>
-                            • 飞书：马田野
+                            • 邮箱：<a href="mailto:matianye@goodideamedia.com" target="_blank">matianye@goodideamedia.com</a> <br>
+                            • 飞书：<a href="https://k74u68pb5x.feishu.cn/wiki/Oo4EwunnoiZJGPkxTOYcT2hmn7c?from=from_copylink" target="_blank">问题反馈</a>
                         </div>
                     </div>
 
@@ -373,7 +376,7 @@
                             目前支持以下格式：<br>
                             <strong>视频格式：</strong> mp4, avi, mov, mkv, ts, mxf<br>
                             <strong>音频格式：</strong> mp3, wav, flac<br><br>
-                            单个文件最大支持 10GB，最多可同时上传 10 个文件。
+                            单个文件最大支持 10GB，最多可同时上传 10 个文件。单个文件时长不超过 90 分钟。
                         </div>
                     </div>
 

@@ -14,6 +14,7 @@ from config import (
     MAX_FILE_NUMBERS,
     ALIGNMENT_MODEL,
 )
+from config import MAX_DURATION_SECONDS
 from modules.processing_queue import ProcessingQueue
 from modules.video_processor import VideoProcessor
 from utils import seconds_to_hhmmss, hhmmss_to_seconds, clear_directory_fast \
@@ -56,6 +57,22 @@ def check_uploaded_files(files: List) -> str:
         if ext not in ALLOWED_EXTENSIONS:
             raise gr.Error(
                 f"不支持的文件格式: {ext}, 仅支持: {', '.join(ALLOWED_EXTENSIONS)}")
+
+        # 检查文件时长
+        from utils import get_media_duration
+        duration = get_media_duration(file.name)
+        if duration is not None:
+            if duration > MAX_DURATION_SECONDS:
+                duration_minutes = duration / 60
+                max_minutes = MAX_DURATION_SECONDS / 60
+                raise gr.Error(
+                    f"文件时长超过限制: {filename}\n"
+                    f"当前时长: {duration_minutes:.1f} 分钟\n"
+                    f"最大允许时长: {max_minutes} 分钟"
+                )
+        # 如果无法获取时长（可能是文件损坏或格式问题），给出警告但不阻止
+        elif duration is None:
+            print(f"警告: 无法获取文件时长: {filename}")
 
         saved_paths.append(file.name)
 

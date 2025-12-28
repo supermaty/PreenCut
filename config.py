@@ -49,6 +49,7 @@ ALLOWED_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'ts', 'mxf', 'mp3', 'wav',
                       'flac']
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
 MAX_FILE_NUMBERS = 10  # 最大文件数量
+MAX_DURATION_SECONDS = 90 * 60  # 最长视频时长90分钟 = 5400秒
 
 # 临时文件夹
 TEMP_FOLDER = "temp"
@@ -80,7 +81,7 @@ LLM_MODEL_OPTIONS = [
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key_env_name": "GOOGLE_API_KEY",
         "label": "gemini-3",
-        "max_tokens": 4096
+        "max_tokens": 200000
     },
     {
         "model": "deepseek-reasoner",

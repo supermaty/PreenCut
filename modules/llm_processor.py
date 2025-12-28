@@ -90,8 +90,10 @@ class LLMProcessor:
 
         # 尝试提取JSON内容
         try:
+            if result is None:
+                raise ValueError("视频过长，请分段处理后再重新分析。")
             # 去除可能的代码块标记
-            if result.startswith("```json"):
+            elif result.startswith("```json"):
                 result = result[7:-3].strip()
             elif result.startswith("```"):
                 result = result[3:-3].strip()

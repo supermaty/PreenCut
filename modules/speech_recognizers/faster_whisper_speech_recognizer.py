@@ -56,7 +56,7 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         segment_list = []
 
         # 读取 segment_list.json 文件
-        # json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', 'segment_list.json')
+        # json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', 'segment_list_large-v3-turbo_20251226190905.json')
         # with open(json_path, 'r', encoding='utf-8') as f:
         #     segment_list = json.load(f)
         
