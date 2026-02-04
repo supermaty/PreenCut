@@ -416,6 +416,16 @@ def create_gradio_interface():
         gr.Markdown(
             "上传包含语音的视频/音频文件，AI将自动识别语音内容、智能分段，并允许您输入自然语言进行检索。")
 
+        # # 测试按钮：用于验证刷新页面后是否加载最新前端
+        # with gr.Row():
+        #     test_refresh_btn = gr.Button("🔄 测试按钮-刷新后可见最新", variant="secondary")
+        #     test_refresh_msg = gr.Textbox(label="测试反馈", interactive=False, visible=True)
+
+        # def on_test_click():
+        #     return "✅ 已点击，说明前端已是最新（刷新生效）"
+        # test_refresh_btn.click(on_test_click, outputs=test_refresh_msg)
+
+        ### 开始处理 ###
         with gr.Row():
             with gr.Column(scale=2):
                 file_upload = gr.Files(
