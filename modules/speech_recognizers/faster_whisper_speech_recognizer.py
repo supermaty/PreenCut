@@ -70,6 +70,7 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
 
         # 把segment_list写入到 segment_list.json 文件
         json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', f'segment_list_{self.model_size}_{datetime.now().strftime("%Y%m%d%H%M%S")}.json')
+        os.makedirs(os.path.dirname(json_path), exist_ok=True)
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(segment_list, f, ensure_ascii=False, indent=4)
         
