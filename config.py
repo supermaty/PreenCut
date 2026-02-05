@@ -67,7 +67,8 @@ WHISPER_DEVICE = DEVICE_TYPE
 WHISPER_GPU_IDS = AVAILABLE_GPUS
 WHISPER_COMPUTE_TYPE = 'float16' if WHISPER_DEVICE == 'cuda' else 'float32'  # float16, float32, int8
 WHISPER_BATCH_SIZE = 16  # 批处理大小
-FASTER_WHISPER_BEAM_SIZE = 5
+FASTER_WHISPER_BEAM_SIZE = 10 #5
+WHISPER_LANGUAGE = "zh"  # 指定语言：zh=中文，None=自动检测，en=英文 等
 
 # 语音文字对齐模型
 ENABLE_ALIGNMENT = True  # 是否启用对齐

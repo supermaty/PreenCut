@@ -18,12 +18,14 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             compute_type,
             batch_size=16,
             beam_size=5,
+            language=None,
     ):
         super().__init__(model_size, device, device_index=device_index,
                          compute_type=compute_type,
                          batch_size=batch_size)
         if beam_size > 0:
             self.beam_size = beam_size
+        self.language = language
         print(f"加载Whisper模型: {self.model_size}")
         print(f"device = {self.device}")
         print(f"{self.model_size, self.device, self.compute_type, self.opts}")
@@ -45,13 +47,15 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         print(f"batch size = {self.batch_size}")
         audio = faster_whisper.decode_audio(audio_path)
         print("load audio success")
-        segments, info = self.model.transcribe(
-            audio,
-            initial_prompt="请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence.",
+        kwargs = dict(
+            initial_prompt="请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence. 内容多为母婴或保健品带货直播，常出现品牌与产品名、成分与功能描述。示例词与短语：合生元、合生元派星、派星、益生菌、配方、成分、营养、功能、DHA、叶黄素、乳铁蛋白、品牌露出、口播、产品介绍、画面展示、深度讲解、完整语境、商务核算。",
             word_timestamps=False,
             vad_filter=True,
-            beam_size=self.beam_size
+            beam_size=self.beam_size,
         )
+        if self.language is not None:
+            kwargs["language"] = self.language
+        segments, info = self.model.transcribe(audio, **kwargs)
 
         segment_list = []
 
