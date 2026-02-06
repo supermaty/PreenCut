@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 from datetime import datetime
 from openai import OpenAI
 from config import LLM_MODEL_OPTIONS
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProcessor:
@@ -47,9 +50,9 @@ class LLMProcessor:
 
             相似发音对照表（分析字幕时按正确写法理解）：
             品牌与产品：
-            派星 -> 派心、派新、派芯；
+            派星 -> 派心、派新、派芯、派薪；
             合生元 -> 合生源、核酸盐、合顺园、和顺安、合生园；
-            合生元派星 -> 合生元派心、合生源派星。
+            合生元派星 -> 合生元派心、合生源派星、合生元派薪。
             成分与营养：
             益生菌 -> 益生君、益身菌、一生菌；
             DHA -> D H A、底下去、DHA藻油；
@@ -94,16 +97,38 @@ class LLMProcessor:
         # 组合完整的提示
         full_prompt = f"{user_prompt}\n\n字幕内容：\n{subtitles}"
 
+        # 请求规模日志（便于排查超长/连接断开）
+        if isinstance(subtitles, list):
+            logger.info(
+                "LLM segment_video: segments=%d, prompt_chars=%d",
+                len(subtitles),
+                len(full_prompt),
+            )
+        else:
+            logger.info(
+                "LLM segment_video: subtitles_type=%s, prompt_chars=%d",
+                type(subtitles).__name__,
+                len(full_prompt),
+            )
+
         # 调用OpenAI API
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
-            temperature=self.temperature,
-            max_tokens=self.max_tokens
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": full_prompt}
+                ],
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+        except Exception as e:
+            logger.exception(
+                "LLM API 调用失败: %s (prompt_chars=%d)",
+                type(e).__name__,
+                len(full_prompt),
+            )
+            raise
 
         # 解析响应
         result = response.choices[0].message.content

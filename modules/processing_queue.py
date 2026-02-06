@@ -2,13 +2,15 @@ from queue import Queue
 from threading import Thread, Lock
 import os
 import time
+import json
+from datetime import datetime
 from modules.speech_recognizers.speech_recognizer_factory import \
     SpeechRecognizerFactory
 from modules.aligners.text_aligner import TextAligner
 from modules.llm_processor import LLMProcessor
 from modules.video_processor import VideoProcessor
 from modules.word_segmenter import WordSegmenter
-from config import SPEECH_RECOGNIZER_TYPE
+from config import SPEECH_RECOGNIZER_TYPE, POST_ASR_CORRECTION_MAP, WHISPER_MODEL_SIZE
 from typing import List, Dict, Optional
 from utils import clear_cache
 
@@ -93,6 +95,14 @@ class ProcessingQueue:
                     del recognizer
                     clear_cache()
 
+                    # ASR 后同音字/专有名词纠错（整词替换）
+                    if POST_ASR_CORRECTION_MAP:
+                        for segment in result["segments"]:
+                            text = segment.get("text", "")
+                            for wrong, right in POST_ASR_CORRECTION_MAP.items():
+                                text = text.replace(wrong, right)
+                            segment["text"] = text
+
                     if task_result['enable_alignment']:
                         # 文本对齐
                         print("开始文本对齐...")
@@ -105,6 +115,20 @@ class ProcessingQueue:
                         print("文本对齐完成")
                         del aligner
                         clear_cache()
+
+                    # 写入纠错后（且若开启则对齐后）的断句文件，即输入给大模型前的版本
+                    segment_data_dir = os.path.join(
+                        os.path.dirname(os.path.dirname(__file__)), 'segment-data'
+                    )
+                    os.makedirs(segment_data_dir, exist_ok=True)
+                    seg_model = model_size or WHISPER_MODEL_SIZE
+                    segment_list_path = os.path.join(
+                        segment_data_dir,
+                        f'segment_list_{seg_model}_{datetime.now().strftime("%Y%m%d%H%M%S")}.json'
+                    )
+                    with open(segment_list_path, 'w', encoding='utf-8') as f:
+                        json.dump(result["segments"], f, ensure_ascii=False, indent=4)
+                    print(f"断句文件已保存: {segment_list_path}")
 
                     # 调用大模型进行分段
                     print("调用大模型进行分段...")

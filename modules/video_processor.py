@@ -47,7 +47,10 @@ class VideoProcessor:
                 '-avoid_negative_ts', 'make_zero',
                 '-y', clip_path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                encoding='utf-8', errors='replace'
+            )
             if result.returncode != 0:
                 print(f"FFmpeg error: {result.stderr}")
                 raise RuntimeError(f"视频剪辑失败: {result.stderr}")

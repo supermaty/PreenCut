@@ -67,8 +67,40 @@ WHISPER_DEVICE = DEVICE_TYPE
 WHISPER_GPU_IDS = AVAILABLE_GPUS
 WHISPER_COMPUTE_TYPE = 'float16' if WHISPER_DEVICE == 'cuda' else 'float32'  # float16, float32, int8
 WHISPER_BATCH_SIZE = 16  # 批处理大小
-FASTER_WHISPER_BEAM_SIZE = 10 #5
+FASTER_WHISPER_BEAM_SIZE = 10  # 越大识别越准但越慢，降低会略损准确率
 WHISPER_LANGUAGE = "zh"  # 指定语言：zh=中文，None=自动检测，en=英文 等
+
+# Whisper 识别时的上下文提示（可配置，利于减少同音字与专有名词错误）
+WHISPER_INITIAL_PROMPT = os.getenv(
+    "WHISPER_INITIAL_PROMPT",
+    "请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence. 内容多为母婴或保健品带货直播，常出现品牌与产品名、成分与功能描述。示例词与短语：合生元、合生元派星、派星、益生菌、配方、成分、营养、功能、DHA、叶黄素、乳铁蛋白、品牌露出、口播、产品介绍、画面展示、深度讲解、完整语境、商务核算。"
+).strip() or None  # 空字符串时使用 None，Whisper 将不设 initial_prompt
+
+# VAD 最小静音时长（毫秒），仅当设置时传入 transcribe，用于减少句中短暂静音导致的错误断句
+# 例如 300–500；不设置则使用 faster-whisper 默认
+VAD_MIN_SILENCE_DURATION_MS = os.getenv("VAD_MIN_SILENCE_DURATION_MS", "")
+try:
+    VAD_MIN_SILENCE_DURATION_MS = int(VAD_MIN_SILENCE_DURATION_MS) if VAD_MIN_SILENCE_DURATION_MS else None
+except ValueError:
+    VAD_MIN_SILENCE_DURATION_MS = None
+
+# ASR 后同音字/专有名词纠错：键为错误写法，值为正确写法，对每条 segment 的 text 做整词替换
+# 例如 {"派心": "派星", "益生君": "益生菌"}，留空或 None 表示不纠错
+POST_ASR_CORRECTION_MAP = {
+    "派心": "派星",
+    "派新": "派星",
+    "派芯": "派星",
+    "派薪": "派星",
+    "和声员": "合生元",
+    "和声元": "合生元",
+    "核实员": "合生元",
+    "核权派新": "合生元派星",
+    "核权": "合生元",
+    "益生君": "益生菌",
+    "益身菌": "益生菌",
+    "一生菌": "益生菌",
+}
+# 若需通过环境变量关闭纠错，可在代码中根据环境变量覆盖为空 dict；此处保留默认纠错表
 
 # 语音文字对齐模型
 ENABLE_ALIGNMENT = True  # 是否启用对齐

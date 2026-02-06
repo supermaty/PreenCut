@@ -222,6 +222,20 @@ def select_clip(segment_selection: List[List], evt: gr.SelectData) -> List[
     return segment_selection
 
 
+def select_all_segments(segment_selection: List[List]) -> List[List]:
+    """全选所有片段"""
+    if not segment_selection:
+        return segment_selection
+    return [[CHECKBOX_CHECKED] + list(row[1:]) for row in segment_selection]
+
+
+def deselect_all_segments(segment_selection: List[List]) -> List[List]:
+    """取消全选"""
+    if not segment_selection:
+        return segment_selection
+    return [[CHECKBOX_UNCHECKED] + list(row[1:]) for row in segment_selection]
+
+
 def clip_and_download(status_display: Dict,
                       segment_selection: List[List], download_mode: str) -> str:
     """剪辑并下载选择的片段"""
@@ -340,7 +354,10 @@ def clip_and_download(status_display: Dict,
             '-c', 'copy', combined_path
         ]
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd, check=True, capture_output=True, text=True,
+                encoding='utf-8', errors='replace'
+            )
         except subprocess.CalledProcessError as e:
             error_msg = f"FFmpeg 错误 (返回码: {e.returncode}):\n"
             error_msg += f"命令: {' '.join(cmd)}\n"
@@ -520,9 +537,22 @@ def create_gradio_interface():
                         type="array",
                         label="选择要保留的片段"
                     )
+                    with gr.Row():
+                        select_all_btn = gr.Button("全选", variant="secondary")
+                        deselect_all_btn = gr.Button("取消全选", variant="secondary")
                     segment_selection.select(select_clip,
                                              inputs=segment_selection,
                                              outputs=segment_selection)
+                    select_all_btn.click(
+                        select_all_segments,
+                        inputs=[segment_selection],
+                        outputs=segment_selection
+                    )
+                    deselect_all_btn.click(
+                        deselect_all_segments,
+                        inputs=[segment_selection],
+                        outputs=segment_selection
+                    )
                     # 添加下载模式选择
                     download_mode = gr.Radio(
                         choices=["打包成zip文件", "合并成一个文件"],
