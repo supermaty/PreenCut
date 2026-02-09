@@ -83,10 +83,9 @@ def process_files(files: List, llm_model: str,
                   temperature: float,
                   prompt: Optional[str] = None,
                   whisper_model_size: Optional[str] = None,
-                  enable_alignment=None, max_line_length=16) -> Tuple[
-    str, Dict]:
-    """处理上传的文件"""
-
+                  enable_alignment=None, max_line_length=32) -> Tuple[
+    str, Dict, float]:
+    """处理上传的文件，返回 (task_id, status_display, progress_initial)."""
     # 检查上传的文件是否符合要求
     saved_paths = check_uploaded_files(files)
 
@@ -105,13 +104,14 @@ def process_files(files: List, llm_model: str,
                               whisper_model_size, enable_alignment,
                               max_line_length)
 
-    return task_id, {"status": "已加入队列，请稍候..."}
+    return task_id, {"status": "已加入队列，请稍候..."}, 0.0
 
 
 def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
-        Tuple[Dict, List, List, gr.Timer]:
-    """检查任务状态"""
+        Tuple[Dict, List, List, float, gr.Timer]:
+    """检查任务状态，返回 (file_download, srt_download, status_display, result_table, segment_selection, asr_result, progress, timer)."""
     result = processing_queue.get_result(task_id)
+    progress = result.get("progress", 0.0)
 
     if result["status"] == "completed":
         # 整理结果以便显示
@@ -179,6 +179,7 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             display_result,
             clip_result,
             asr_result,
+            1.0,
             gr.Timer(active=False)
         )
 
@@ -187,28 +188,29 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             [], [],
             {"task_id": task_id,
              "status": f"错误: {result.get('error', '未知错误')}"},
-            [], [], '', gr.update()
+            [], [], '', progress, gr.update()
         )
     elif result["status"] == "queued":
         return (
             [], [],
             {"task_id": task_id,
              "status": f"排队中, 前面还有{processing_queue.get_queue_size()}个任务"},
-            [], [], '', gr.update()
+            [], [], '', 0.0, gr.update()
         )
 
     if task_id:
         return (
             [], [],
             {"task_id": task_id, "status": "处理中...",
-             "status_info": result.get("status_info", "")},
-            [], [], '', gr.update()
+             "status_info": result.get("status_info", ""),
+             "progress": progress},
+            [], [], '', progress, gr.update()
         )
     else:
         return (
             [], [],
             {"task_id": "", "status": ""},
-            [], [], '', gr.update()
+            [], [], '', 0.0, gr.update()
         )
 
 
@@ -486,7 +488,7 @@ def create_gradio_interface():
                         value=DEFAULT_ENABLE_ALIGNMENT
                     )
                     max_line_length = gr.Slider(minimum=1, maximum=50, step=1,
-                                                value=16,
+                                                value=32,
                                                 label="单条字幕最大长度(仅对中文有效)",
                                                 visible=True)
 
@@ -500,6 +502,15 @@ def create_gradio_interface():
                 with gr.Row():
                     status_display = gr.JSON(label="处理状态")
                     task_id = gr.Textbox(visible=False)
+                progress_bar = gr.Slider(
+                    minimum=0,
+                    maximum=1,
+                    value=0,
+                    step=0.01,
+                    label="处理进度",
+                    interactive=False,
+                    visible=True,
+                )
 
             with gr.Column(scale=3):
                 with gr.Tab("分析结果"):
@@ -569,18 +580,27 @@ def create_gradio_interface():
 
         # 定时器，用于轮询状态
         timer = gr.Timer(2, active=False)
-        timer.tick(check_status, inputs=[task_id, alignment, max_line_length],
-                   outputs=[file_download, srt_download, status_display,
-                            result_table,
-                            segment_selection, asr_result,
-                            timer])
+        timer.tick(
+            check_status,
+            inputs=[task_id, alignment, max_line_length],
+            outputs=[
+                file_download,
+                srt_download,
+                status_display,
+                result_table,
+                segment_selection,
+                asr_result,
+                progress_bar,
+                timer,
+            ],
+        )
 
         # 事件处理
         process_btn.click(
             process_files,
             inputs=[file_upload, llm_model, temperature, prompt_input,
                     model_size, alignment, max_line_length],
-            outputs=[task_id, status_display]
+            outputs=[task_id, status_display, progress_bar],
         ).then(
             lambda: gr.Timer(active=True),
             inputs=None,

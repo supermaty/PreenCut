@@ -49,7 +49,7 @@ ALLOWED_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'ts', 'mxf', 'mp3', 'wav',
                       'flac']
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
 MAX_FILE_NUMBERS = 10  # 最大文件数量
-MAX_DURATION_SECONDS = 90 * 60  # 最长视频时长90分钟 = 5400秒
+MAX_DURATION_SECONDS = 180 * 60  # 最长视频时长180分钟 = 10800秒（3小时）
 
 # 临时文件夹
 TEMP_FOLDER = "temp"
@@ -76,36 +76,104 @@ WHISPER_INITIAL_PROMPT = os.getenv(
     "请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence. 内容多为母婴或保健品带货直播，常出现品牌与产品名、成分与功能描述。示例词与短语：合生元、合生元派星、派星、益生菌、配方、成分、营养、功能、DHA、叶黄素、乳铁蛋白、品牌露出、口播、产品介绍、画面展示、深度讲解、完整语境、商务核算。"
 ).strip() or None  # 空字符串时使用 None，Whisper 将不设 initial_prompt
 
-# VAD 最小静音时长（毫秒），仅当设置时传入 transcribe，用于减少句中短暂静音导致的错误断句
-# 例如 300–500；不设置则使用 faster-whisper 默认
-VAD_MIN_SILENCE_DURATION_MS = os.getenv("VAD_MIN_SILENCE_DURATION_MS", "")
+# VAD 最小静音时长（毫秒），用于减少句中短暂静音导致的过度断句
+# 默认 600ms（比 faster-whisper 默认更“耐心”一些，让同一段话尽量不要被拆太碎）
+# 如需调整，可通过环境变量 VAD_MIN_SILENCE_DURATION_MS 覆盖
+_vad_min_silence_env = os.getenv("VAD_MIN_SILENCE_DURATION_MS", "").strip()
 try:
-    VAD_MIN_SILENCE_DURATION_MS = int(VAD_MIN_SILENCE_DURATION_MS) if VAD_MIN_SILENCE_DURATION_MS else None
+    if _vad_min_silence_env:
+        VAD_MIN_SILENCE_DURATION_MS = int(_vad_min_silence_env)
+    else:
+        VAD_MIN_SILENCE_DURATION_MS = 600
 except ValueError:
-    VAD_MIN_SILENCE_DURATION_MS = None
+    VAD_MIN_SILENCE_DURATION_MS = 600
 
 # ASR 后同音字/专有名词纠错：键为错误写法，值为正确写法，对每条 segment 的 text 做整词替换
 # 例如 {"派心": "派星", "益生君": "益生菌"}，留空或 None 表示不纠错
 POST_ASR_CORRECTION_MAP = {
+    # 「派星」相关常见误识别
     "派心": "派星",
     "派新": "派星",
     "派芯": "派星",
     "派薪": "派星",
+    "和珊派星": "合生元派星",
+    "和尚派星": "合生元派星",
+    "和尚元派星": "合生元派星",
+    "和尚园派星": "合生元派星",
+    "和声园派星": "合生元派星",
+    "合生派星": "合生元派星",
+
+    # 「合生元」本身相关
     "和声员": "合生元",
     "和声元": "合生元",
     "核实员": "合生元",
-    "核权派新": "合生元派星",
+    "和尚元": "合生元",
+    "和尚园": "合生元",
     "核权": "合生元",
+
+    # 组合提及时的误识别
+    "核权派新": "合生元派星",
+
+    # 益生菌相关
     "益生君": "益生菌",
     "益身菌": "益生菌",
     "一生菌": "益生菌",
 }
 # 若需通过环境变量关闭纠错，可在代码中根据环境变量覆盖为空 dict；此处保留默认纠错表
 
+# 短句合并：字数（字符数）低于此值的 segment 会与上一段合并，减少碎片；0 表示不合并
+MERGE_SEGMENT_MAX_CHARS = int(os.getenv("MERGE_SEGMENT_MAX_CHARS", "8"))
+
+# 大模型结果后过滤关键词（可选兜底层）
+# 可通过环境变量 EXCLUDE_SUMMARY_KEYWORDS / EXCLUDE_TAGS_KEYWORDS 覆盖，使用逗号分隔字符串
+_summary_exclude_env = os.getenv("EXCLUDE_SUMMARY_KEYWORDS", "")
+if _summary_exclude_env:
+    EXCLUDE_SUMMARY_KEYWORDS = [
+        kw.strip() for kw in _summary_exclude_env.split(",") if kw.strip()
+    ]
+else:
+    EXCLUDE_SUMMARY_KEYWORDS = [
+        "差评",
+        "吐槽",
+        "投诉",
+        "不好",
+        "后悔",
+        "翻车",
+        "买不到",
+        "不给卖",
+        "缺货",
+        "断货",
+        "抢不到",
+    ]
+
+_tags_exclude_env = os.getenv("EXCLUDE_TAGS_KEYWORDS", "")
+if _tags_exclude_env:
+    EXCLUDE_TAGS_KEYWORDS = [
+        kw.strip() for kw in _tags_exclude_env.split(",") if kw.strip()
+    ]
+else:
+    EXCLUDE_TAGS_KEYWORDS = [
+        "负面",
+        "差评",
+        "闲聊",
+        "跑题",
+        "缺货",
+        "买不到",
+        "不给卖",
+    ]
+
 # 语音文字对齐模型
 ENABLE_ALIGNMENT = True  # 是否启用对齐
 ALIGNMENT_DEVICE = DEVICE_TYPE  # 对齐模型使用的设备
 ALIGNMENT_MODEL = 'ctc-forced-aligner'  # 使用的对齐模型, whisperx, ctc-forced-aligner
+
+# 大模型请求超时（秒），走代理或长视频时可调大，避免握手/等待超时
+LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "180"))
+
+# 长视频调用控制：单次传入大模型的最大字幕条数与最大字符数
+# 已按最长 3h 视频适配：单次可传更多内容，减少分片次数与连接中断概率；过大仍可能超时
+MAX_SEGMENTS_PER_LLM_CALL = int(os.getenv("MAX_SEGMENTS_PER_LLM_CALL", "1200"))
+MAX_LLM_INPUT_CHARS = int(os.getenv("MAX_LLM_INPUT_CHARS", "300000"))
 
 # OpenAI API配置
 LLM_MODEL_OPTIONS = [

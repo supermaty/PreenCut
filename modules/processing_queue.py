@@ -3,6 +3,7 @@ from threading import Thread, Lock
 import os
 import time
 import json
+import math
 from datetime import datetime
 from modules.speech_recognizers.speech_recognizer_factory import \
     SpeechRecognizerFactory
@@ -10,9 +11,37 @@ from modules.aligners.text_aligner import TextAligner
 from modules.llm_processor import LLMProcessor
 from modules.video_processor import VideoProcessor
 from modules.word_segmenter import WordSegmenter
-from config import SPEECH_RECOGNIZER_TYPE, POST_ASR_CORRECTION_MAP, WHISPER_MODEL_SIZE
+from config import (
+    SPEECH_RECOGNIZER_TYPE,
+    POST_ASR_CORRECTION_MAP,
+    WHISPER_MODEL_SIZE,
+    MAX_SEGMENTS_PER_LLM_CALL,
+    MAX_LLM_INPUT_CHARS,
+    MERGE_SEGMENT_MAX_CHARS,
+)
 from typing import List, Dict, Optional
 from utils import clear_cache
+
+
+def _merge_short_segments(segments: List[Dict], max_chars: int) -> List[Dict]:
+    """将字数低于 max_chars 的 segment 与上一段合并，减少碎片。"""
+    if not segments or max_chars <= 0:
+        return segments
+    merged: List[Dict] = []
+    for seg in segments:
+        seg_copy = dict(seg)
+        text = (seg_copy.get("text") or "").strip()
+        if merged and len(text) < max_chars:
+            merged[-1]["end"] = seg_copy.get("end", merged[-1]["end"])
+            merged[-1]["text"] = (merged[-1].get("text") or "") + (seg_copy.get("text") or "")
+        else:
+            merged.append(seg_copy)
+    # 若第一条仍过短，合并到第二条
+    while len(merged) > 1 and len((merged[0].get("text") or "").strip()) < max_chars:
+        merged[1]["start"] = merged[0]["start"]
+        merged[1]["text"] = (merged[0].get("text") or "") + (merged[1].get("text") or "")
+        merged.pop(0)
+    return merged
 
 
 class ProcessingQueue:
@@ -31,7 +60,7 @@ class ProcessingQueue:
     def add_task(self, task_id: str, files: List[str], llm_model: str,
                  prompt: Optional[str] = None, temperature=0.3,
                  whisper_model_size: Optional[str] = None,
-                 enable_alignment=False, max_line_length=16):
+                 enable_alignment=False, max_line_length=32):
         """添加任务到队列"""
         with self.lock:
             self.results[task_id] = {
@@ -59,6 +88,8 @@ class ProcessingQueue:
             try:
                 with self.lock:
                     task_result["status"] = "processing"
+                    task_result["progress"] = 0.0
+                    task_result["status_info"] = "准备中..."
 
                 # 获取任务数据
                 with self.lock:
@@ -74,9 +105,11 @@ class ProcessingQueue:
                 if task_result['enable_alignment']:
                     word_segmenter = WordSegmenter()
 
+                num_files = len(files)
                 for i, file_path in enumerate(files):
-                    task_result[
-                        "status_info"] = f"共{len(files)}个文件，正在处理第{i + 1}个文件"
+                    base = i / num_files
+                    task_result["progress"] = base
+                    task_result["status_info"] = f"共{num_files}个文件，正在处理第{i + 1}个文件"
                     # 提取音频（如果是视频）
                     if file_path.lower().endswith(
                             ('.mp4', '.avi', '.mov', '.mkv', '.ts', '.mxf')):
@@ -86,6 +119,8 @@ class ProcessingQueue:
                         audio_path = file_path
 
                     # 语音识别
+                    task_result["progress"] = base + 0.05 / num_files
+                    task_result["status_info"] = "语音识别中..."
                     print(f"开始语音识别: {file_path}")
                     recognizer = SpeechRecognizerFactory.get_speech_recognizer_by_type(
                         SPEECH_RECOGNIZER_TYPE, model_size)
@@ -94,6 +129,8 @@ class ProcessingQueue:
                         f"语音识别完成，segments个数: {len(result['segments'])}")
                     del recognizer
                     clear_cache()
+                    task_result["progress"] = base + 0.25 / num_files
+                    task_result["status_info"] = "语音识别完成"
 
                     # ASR 后同音字/专有名词纠错（整词替换）
                     if POST_ASR_CORRECTION_MAP:
@@ -105,16 +142,30 @@ class ProcessingQueue:
 
                     if task_result['enable_alignment']:
                         # 文本对齐
+                        task_result["status_info"] = "文本对齐中..."
                         print("开始文本对齐...")
                         language = result['language']
                         aligner = TextAligner(language, word_segmenter,
                                               task_result.get("max_line_length",
-                                                              16))
+                                                              32))
                         result = aligner.align(result["segments"], audio_path)
                         result["language"] = language
                         print("文本对齐完成")
                         del aligner
                         clear_cache()
+                    task_result["progress"] = base + 0.4 / num_files
+                    task_result["status_info"] = "大模型分段中..."
+
+                    # 短句合并：字数低于 MERGE_SEGMENT_MAX_CHARS 的与上一段合并
+                    if MERGE_SEGMENT_MAX_CHARS > 0:
+                        before_merge = len(result["segments"])
+                        result["segments"] = _merge_short_segments(
+                            result["segments"], MERGE_SEGMENT_MAX_CHARS
+                        )
+                        print(
+                            f"短句合并: {before_merge} -> {len(result['segments'])} 条 "
+                            f"(阈值={MERGE_SEGMENT_MAX_CHARS}字)"
+                        )
 
                     # 写入纠错后（且若开启则对齐后）的断句文件，即输入给大模型前的版本
                     segment_data_dir = os.path.join(
@@ -130,13 +181,89 @@ class ProcessingQueue:
                         json.dump(result["segments"], f, ensure_ascii=False, indent=4)
                     print(f"断句文件已保存: {segment_list_path}")
 
-                    # 调用大模型进行分段
+                    # 调用大模型进行分段（根据字幕数量和字符数进行分片处理）
                     print("调用大模型进行分段...")
-                    llm_inputs = [{key: segment.get(key) for key in
-                                   ["start", "end", "text"]} for segment in
-                                  result["segments"]]
-                    segments = llm.segment_video(llm_inputs, prompt)
-                    print(f"大模型分段完成，段数: {len(segments)}")
+                    llm_inputs = [
+                        {key: segment.get(key) for key in ["start", "end", "text"]}
+                        for segment in result["segments"]
+                    ]
+
+                    all_segments = []
+
+                    # 序列化一次用于估算长度（避免过大的 prompt 导致超时或断开）
+                    try:
+                        llm_inputs_json = json.dumps(
+                            llm_inputs, ensure_ascii=False
+                        )
+                    except TypeError:
+                        # 如果有不可序列化对象，退化为逐块序列化
+                        llm_inputs_json = ""
+
+                    need_chunk_by_count = len(llm_inputs) > MAX_SEGMENTS_PER_LLM_CALL
+                    need_chunk_by_chars = (
+                        len(llm_inputs_json) > MAX_LLM_INPUT_CHARS
+                        if llm_inputs_json
+                        else False
+                    )
+
+                    if not need_chunk_by_count and not need_chunk_by_chars:
+                        # 单次调用即可
+                        segments = llm.segment_video(llm_inputs, prompt)
+                        all_segments.extend(segments)
+                        print(f"大模型分段完成，段数: {len(all_segments)}")
+                    else:
+                        # 按顺序切成若干块，每块是若干完整字幕，块之间不重叠
+                        estimated_chunks = max(
+                            1,
+                            math.ceil(len(llm_inputs) / MAX_SEGMENTS_PER_LLM_CALL),
+                        )
+                        print(
+                            f"大模型输入过大，按分片方式调用：segments={len(llm_inputs)}, "
+                            f"MAX_SEGMENTS_PER_LLM_CALL={MAX_SEGMENTS_PER_LLM_CALL}, "
+                            f"MAX_LLM_INPUT_CHARS={MAX_LLM_INPUT_CHARS}"
+                        )
+
+                        start_idx = 0
+                        total_segments = len(llm_inputs)
+                        chunk_index = 0
+
+                        while start_idx < total_segments:
+                            end_idx = min(
+                                start_idx + MAX_SEGMENTS_PER_LLM_CALL, total_segments
+                            )
+                            chunk = llm_inputs[start_idx:end_idx]
+
+                            # 再按字符数粗略控制一下（避免极端长文本）
+                            chunk_json = json.dumps(chunk, ensure_ascii=False)
+                            # 如果字符超限且可以继续切小，就缩小 end_idx
+                            while (
+                                len(chunk_json) > MAX_LLM_INPUT_CHARS
+                                and end_idx - start_idx > 1
+                            ):
+                                end_idx = (start_idx + end_idx) // 2
+                                chunk = llm_inputs[start_idx:end_idx]
+                                chunk_json = json.dumps(chunk, ensure_ascii=False)
+
+                            task_result["status_info"] = (
+                                f"大模型分段中(第{chunk_index + 1}/{estimated_chunks}片)..."
+                            )
+                            task_result["progress"] = base + (
+                                0.4 + 0.55 * (chunk_index + 1) / estimated_chunks
+                            ) / num_files
+                            print(
+                                f"分片调用大模型：[{start_idx}, {end_idx})，"
+                                f"chunk_segments={len(chunk)}, chunk_chars={len(chunk_json)}"
+                            )
+                            chunk_segments = llm.segment_video(chunk, prompt)
+                            all_segments.extend(chunk_segments)
+                            chunk_index += 1
+                            start_idx = end_idx
+
+                        print(f"大模型分片分段完成，总段数: {len(all_segments)}")
+                    task_result["progress"] = (i + 1) / num_files
+                    task_result["status_info"] = f"第{i + 1}个文件处理完成"
+
+                    segments = all_segments
 
                     # 保存结果
                     file_results.append({
@@ -150,6 +277,8 @@ class ProcessingQueue:
                 with self.lock:
                     task_result["status"] = "completed"
                     task_result["result"] = file_results
+                    task_result["progress"] = 1.0
+                    task_result["status_info"] = "全部完成"
 
             except Exception as e:
                 import traceback
