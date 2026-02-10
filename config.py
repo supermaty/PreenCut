@@ -124,6 +124,9 @@ POST_ASR_CORRECTION_MAP = {
 # 短句合并：字数（字符数）低于此值的 segment 会与上一段合并，减少碎片；0 表示不合并
 MERGE_SEGMENT_MAX_CHARS = int(os.getenv("MERGE_SEGMENT_MAX_CHARS", "8"))
 
+# 多文件时是否按 summary 跨文件去重（两段视频中部分内容重复时只保留一条片段）
+DEDUPE_SEGMENTS_ACROSS_FILES = os.getenv("DEDUPE_SEGMENTS_ACROSS_FILES", "true").strip().lower() in ("1", "true", "yes")
+
 # 大模型结果后过滤关键词（可选兜底层）
 # 可通过环境变量 EXCLUDE_SUMMARY_KEYWORDS / EXCLUDE_TAGS_KEYWORDS 覆盖，使用逗号分隔字符串
 _summary_exclude_env = os.getenv("EXCLUDE_SUMMARY_KEYWORDS", "")
@@ -175,7 +178,7 @@ LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "180"))
 MAX_SEGMENTS_PER_LLM_CALL = int(os.getenv("MAX_SEGMENTS_PER_LLM_CALL", "1200"))
 MAX_LLM_INPUT_CHARS = int(os.getenv("MAX_LLM_INPUT_CHARS", "300000"))
 
-# OpenAI API配置
+# OpenAI API 配置（max_tokens 为单次响应上限，长视频/多片段时需足够大以免结果被截断）
 LLM_MODEL_OPTIONS = [
     {
         "model": "gemini-3-pro-preview",
@@ -189,14 +192,14 @@ LLM_MODEL_OPTIONS = [
         "base_url": "https://api.deepseek.com/v1",
         "api_key_env_name": "DEEPSEEK_V3_API_KEY",
         "label": "deepseek-reasoner-v3.2",
-        "max_tokens": 4096
+        "max_tokens": 16384
     },
     {
         "model": "doubao-1-5-pro-32k-250115",
         "base_url": "https://ark.cn-beijing.volces.com/api/v3",
         "api_key_env_name": "DOUBAO_1_5_PRO_API_KEY",
         "label": "豆包",
-        "max_tokens": 4096
+        "max_tokens": 16384
     }
 ]
 

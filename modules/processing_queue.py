@@ -18,9 +18,46 @@ from config import (
     MAX_SEGMENTS_PER_LLM_CALL,
     MAX_LLM_INPUT_CHARS,
     MERGE_SEGMENT_MAX_CHARS,
+    DEDUPE_SEGMENTS_ACROSS_FILES,
 )
 from typing import List, Dict, Optional
 from utils import clear_cache
+import re
+
+
+def _normalize_summary_for_dedup(text: str) -> str:
+    """归一化 summary 用于跨文件去重比较：去空格、标点，转连续空白为单空格。"""
+    if not text:
+        return ""
+    s = (text or "").strip()
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^\w\s]", "", s)  # 去掉标点等，保留中文/英文/数字
+    return s.strip()
+
+
+def _dedupe_segments_across_files(file_results: List[Dict]) -> int:
+    """
+    按 summary 归一化后跨文件去重：相同或极相似 summary 只保留第一次出现的片段。
+    返回被移除的重复片段总数。
+    """
+    if not file_results or len(file_results) < 2:
+        return 0
+    seen = set()
+    removed = 0
+    for file_data in file_results:
+        segments = file_data.get("segments") or []
+        kept = []
+        for seg in segments:
+            summary = (seg.get("summary") or "").strip()
+            norm = _normalize_summary_for_dedup(summary)
+            if not norm or norm in seen:
+                if norm:
+                    removed += 1
+                continue
+            seen.add(norm)
+            kept.append(seg)
+        file_data["segments"] = kept
+    return removed
 
 
 def _merge_short_segments(segments: List[Dict], max_chars: int) -> List[Dict]:
@@ -272,6 +309,12 @@ class ProcessingQueue:
                         "segments": segments,
                         "filepath": file_path
                     })
+
+                # 多文件时按 summary 跨文件去重（部分内容重复只保留一条）
+                if DEDUPE_SEGMENTS_ACROSS_FILES and len(file_results) > 1:
+                    removed = _dedupe_segments_across_files(file_results)
+                    if removed > 0:
+                        print(f"跨文件片段去重: 移除 {removed} 条重复片段")
 
                 # 更新结果
                 with self.lock:

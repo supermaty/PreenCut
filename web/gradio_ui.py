@@ -89,10 +89,25 @@ def process_files(files: List, llm_model: str,
     # 检查上传的文件是否符合要求
     saved_paths = check_uploaded_files(files)
 
+    # 上传去重：同一路径只保留一条（避免重复选择同一文件被处理多次）
+    original_count = len(saved_paths)
+    seen_paths = set()
+    deduped_paths = []
+    for p in saved_paths:
+        norm = os.path.normpath(os.path.abspath(p))
+        if norm not in seen_paths:
+            seen_paths.add(norm)
+            deduped_paths.append(p)
+    saved_paths = deduped_paths
+    dup_count = original_count - len(saved_paths)
+
+    if not saved_paths:
+        raise gr.Error("去重后没有可处理的文件，请重新选择。")
+
     # 创建唯一任务ID
     task_id = f"task_{uuid.uuid4().hex}"
 
-    print(f"添加任务: {task_id}, 文件路径: {saved_paths}", flush=True)
+    print(f"添加任务: {task_id}, 文件路径: {saved_paths}" + (f", 已忽略 {dup_count} 个重复" if dup_count else ""), flush=True)
 
     # 添加到处理队列
     if enable_alignment == "开启":
@@ -104,7 +119,10 @@ def process_files(files: List, llm_model: str,
                               whisper_model_size, enable_alignment,
                               max_line_length)
 
-    return task_id, {"status": "已加入队列，请稍候..."}, 0.0
+    status_msg = f"已加入队列，共 {len(saved_paths)} 个文件，请稍候..."
+    if dup_count > 0:
+        status_msg = f"已忽略 {dup_count} 个重复文件。{status_msg}"
+    return task_id, {"status": status_msg}, 0.0
 
 
 def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \

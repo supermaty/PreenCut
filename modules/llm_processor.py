@@ -291,20 +291,28 @@ class LLMProcessor:
                 break
             except APIConnectionError as e:
                 last_exception = e
+                cause = getattr(e, "__cause__", None) or e
+                base = getattr(self.client, "base_url", None) or ""
                 logger.warning(
-                    "LLM API 连接错误(APIConnectionError)，第 %d/%d 次重试，prompt_chars=%d，错误类型=%s",
+                    "LLM API 连接错误(APIConnectionError)，第 %d/%d 次重试，model=%s, base_url=%s, "
+                    "prompt_chars=%d, 直接原因=%s: %s",
                     attempt,
                     max_retries,
+                    self.model,
+                    base[:80] + "..." if len(base) > 80 else base,
                     len(full_prompt),
-                    type(e).__name__,
+                    type(cause).__name__,
+                    str(cause)[:200],
                 )
                 if attempt < max_retries:
                     # 简单线性退避
                     time.sleep(2 * attempt)
                     continue
                 logger.exception(
-                    "LLM API 在重试后仍然连接失败(APIConnectionError)，prompt_chars=%d",
+                    "LLM API 在重试后仍然连接失败(APIConnectionError)，model=%s, prompt_chars=%d, cause=%s",
+                    self.model,
                     len(full_prompt),
+                    type(cause).__name__ + ": " + str(cause)[:300],
                 )
                 raise
             except Exception as e:
