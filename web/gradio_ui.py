@@ -495,9 +495,37 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         return task_result, [], []
 
 
+# Tech Assistant 插件：按 https://ai.goodideaggn.com/tech-assistant 集成
+# 等 UMD 加载完成后再 init，避免刷新时脚本未就绪导致小机器人不出现
+TECH_ASSISTANT_HEAD = """
+<script src="https://ai.goodideaggn.com/tech-assistant/tech-assistant.umd.js"></script>
+<script>
+(function() {
+  var appId = "app_6aaf7312ad1d";
+  function tryInit() {
+    if (window.TechAssistant && typeof window.TechAssistant.init === "function") {
+      window.TechAssistant.init({ applicationId: appId });
+      return true;
+    }
+    return false;
+  }
+  function initWhenReady() {
+    if (tryInit()) return;
+    var attempts = 0, maxAttempts = 25;
+    var t = setInterval(function() {
+      if (tryInit() || ++attempts >= maxAttempts) clearInterval(t);
+    }, 200);
+  }
+  if (document.readyState === "complete") initWhenReady();
+  else window.addEventListener("load", initWhenReady);
+})();
+</script>
+"""
+
+
 def create_gradio_interface():
     """创建Gradio界面"""
-    with (gr.Blocks(title="PreenCut", theme=gr.themes.Soft()) as app):
+    with gr.Blocks(title="PreenCut", theme=gr.themes.Soft(), head=TECH_ASSISTANT_HEAD) as app:
         gr.Markdown("# 🎬 PreenCut-AI视频剪辑助手")
         gr.Markdown(
             "上传包含语音的视频/音频文件，AI将自动识别语音内容、智能分段，并允许您输入自然语言进行检索。")
