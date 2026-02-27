@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 # 从 .env 文件加载环境变量
 load_dotenv()
 
+# 国内直连 Hugging Face 易 SSL 超时，默认用镜像以便 CTC 对齐等模型可下载；.env 中设 HF_ENDPOINT= 可改回官方
+if not os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 # API 密钥从环境变量或 .env 文件读取
 # 如果环境变量中不存在，则从 .env 文件中读取
 # 注意：.env 文件中的值会覆盖已存在的环境变量（除非设置 override=False）
@@ -49,7 +53,18 @@ ALLOWED_EXTENSIONS = ['mp4', 'avi', 'mov', 'mkv', 'ts', 'mxf', 'mp3', 'wav',
                       'flac']
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
 MAX_FILE_NUMBERS = 10  # 最大文件数量
-MAX_DURATION_SECONDS = 180 * 60  # 最长视频时长180分钟 = 10800秒（3小时）
+# 单文件最长时长（秒），默认 6 小时；可通过环境变量 MAX_DURATION_SECONDS 覆盖
+def _parse_max_duration():
+    val = os.getenv("MAX_DURATION_SECONDS", "").strip()
+    if not val:
+        return 360 * 60  # 6 小时
+    try:
+        return int(val)
+    except ValueError:
+        return 360 * 60
+
+
+MAX_DURATION_SECONDS = _parse_max_duration()
 
 # 临时文件夹
 TEMP_FOLDER = "temp"
@@ -121,8 +136,8 @@ POST_ASR_CORRECTION_MAP = {
 }
 # 若需通过环境变量关闭纠错，可在代码中根据环境变量覆盖为空 dict；此处保留默认纠错表
 
-# 短句合并：字数（字符数）低于此值的 segment 会与上一段合并，减少碎片；0 表示不合并
-MERGE_SEGMENT_MAX_CHARS = int(os.getenv("MERGE_SEGMENT_MAX_CHARS", "8"))
+# 短句合并：字数（字符数）低于此值的 segment 会与上一段合并，减少碎片；0 表示不合并。改小则合并更少、断句更细
+MERGE_SEGMENT_MAX_CHARS = int(os.getenv("MERGE_SEGMENT_MAX_CHARS", "4"))
 
 # 多文件时是否按 summary 跨文件去重（两段视频中部分内容重复时只保留一条片段）
 DEDUPE_SEGMENTS_ACROSS_FILES = os.getenv("DEDUPE_SEGMENTS_ACROSS_FILES", "true").strip().lower() in ("1", "true", "yes")
@@ -147,6 +162,15 @@ else:
         "缺货",
         "断货",
         "抢不到",
+        "对比后推荐其他",
+        "对比后没选派星",
+        "推荐了别的",
+        "关注榜一",
+        "小助理",
+        "点关注不迷路",
+        "点点赞",
+        "扣个1",
+        "送礼物",
     ]
 
 _tags_exclude_env = os.getenv("EXCLUDE_TAGS_KEYWORDS", "")
@@ -169,14 +193,29 @@ else:
 ENABLE_ALIGNMENT = True  # 是否启用对齐
 ALIGNMENT_DEVICE = DEVICE_TYPE  # 对齐模型使用的设备
 ALIGNMENT_MODEL = 'ctc-forced-aligner'  # 使用的对齐模型, whisperx, ctc-forced-aligner
+# 长音频对齐时按片段处理，单段最长秒数，超出则切分后分批对齐以免 MemoryError（默认 90 分钟）
+_align_chunk_env = os.getenv("ALIGNMENT_CHUNK_DURATION_SECONDS", "").strip()
+try:
+    ALIGNMENT_CHUNK_DURATION_SECONDS = int(_align_chunk_env) if _align_chunk_env else 90 * 60
+except ValueError:
+    ALIGNMENT_CHUNK_DURATION_SECONDS = 90 * 60
 
 # 大模型请求超时（秒），走代理或长视频时可调大，避免握手/等待超时
 LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "180"))
 
 # 长视频调用控制：单次传入大模型的最大字幕条数与最大字符数
-# 已按最长 3h 视频适配：单次可传更多内容，减少分片次数与连接中断概率；过大仍可能超时
-MAX_SEGMENTS_PER_LLM_CALL = int(os.getenv("MAX_SEGMENTS_PER_LLM_CALL", "1200"))
+# 分片逻辑：先按 MAX_SEGMENTS_PER_LLM_CALL 切区间；若某片 JSON 字符数 > MAX_LLM_INPUT_CHARS，会二分缩小该片直至满足。
+# chunk_chars 建议（按模型上下文）：32k 上下文约 15000～20000；128k 约 60000～80000；200k+ 可 100000～300000。
+# 区间建议：单条 segment 的 JSON 约 50～60 字符，故 MAX_SEGMENTS_PER_LLM_CALL 与 MAX_LLM_INPUT_CHARS 需匹配，
+# 例如 MAX_LLM_INPUT_CHARS=80000 时单片最多约 1300～1600 条，设为 1200 较稳妥；再大需同时提高 MAX_LLM_INPUT_CHARS。
+MAX_SEGMENTS_PER_LLM_CALL = int(os.getenv("MAX_SEGMENTS_PER_LLM_CALL", "2000"))
 MAX_LLM_INPUT_CHARS = int(os.getenv("MAX_LLM_INPUT_CHARS", "300000"))
+# 大模型分片重叠条数：相邻两片重叠若干条，避免边界处漏掉片段（如派星）；合并时按时间去重
+_llm_overlap_env = os.getenv("LLM_CHUNK_OVERLAP_SEGMENTS", "").strip()
+try:
+    LLM_CHUNK_OVERLAP_SEGMENTS = int(_llm_overlap_env) if _llm_overlap_env else 200
+except ValueError:
+    LLM_CHUNK_OVERLAP_SEGMENTS = 200
 
 # OpenAI API 配置（max_tokens 为单次响应上限，长视频/多片段时需足够大以免结果被截断）
 LLM_MODEL_OPTIONS = [

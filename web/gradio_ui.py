@@ -125,6 +125,21 @@ def process_files(files: List, llm_model: str,
     return task_id, {"status": status_msg}, 0.0
 
 
+def cancel_processing(status_display: Dict) -> Dict:
+    """请求取消当前任务。从 status_display 中取 task_id，与界面显示一致。"""
+    display = status_display or {}
+    tid = (display.get("task_id") or "").strip()
+    print(f"[取消] 点击取消处理: status_display keys={list(display.keys())}, task_id={tid!r}", flush=True)
+    if not tid:
+        print("[取消] 无 task_id，无法取消", flush=True)
+        return display
+    ok = processing_queue.cancel_task(tid)
+    print(f"[取消] cancel_task({tid!r}) -> {ok}", flush=True)
+    if ok:
+        return {"task_id": tid, "status": "正在取消..."}
+    return display
+
+
 def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
         Tuple[Dict, List, List, float, gr.Timer]:
     """检查任务状态，返回 (file_download, srt_download, status_display, result_table, segment_selection, asr_result, progress, timer)."""
@@ -206,7 +221,7 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             [], [],
             {"task_id": task_id,
              "status": f"错误: {result.get('error', '未知错误')}"},
-            [], [], '', progress, gr.update()
+            [], [], '', progress, gr.Timer(active=False)
         )
     elif result["status"] == "queued":
         return (
@@ -215,11 +230,19 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
              "status": f"排队中, 前面还有{processing_queue.get_queue_size()}个任务"},
             [], [], '', 0.0, gr.update()
         )
-
-    if task_id:
+    elif result["status"] == "cancelled":
         return (
             [], [],
-            {"task_id": task_id, "status": "处理中...",
+            {"task_id": task_id, "status": "已取消"},
+            [], [], '', result.get("progress", 0.0), gr.Timer(active=False)
+        )
+
+    if task_id:
+        # 已请求取消但当前步骤尚未结束：主状态显示「取消中」
+        status_label = "取消中" if result.get("cancel_requested") else "处理中..."
+        return (
+            [], [],
+            {"task_id": task_id, "status": status_label,
              "status_info": result.get("status_info", ""),
              "progress": progress},
             [], [], '', progress, gr.update()
@@ -515,7 +538,9 @@ def create_gradio_interface():
                     value="找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。特别指令：对于长段落的产品介绍，必须提取完整的中间讲述过程，严禁只截取开头结尾。执行策略为“宁多勿少”，凡是涉及该品牌或产品的上下文关联内容（包括铺垫和总结），请全部保留，确保内容完整性以供商务核算。",
                     lines=2
                 )
-                process_btn = gr.Button("开始处理", variant="primary")
+                with gr.Row():
+                    process_btn = gr.Button("开始处理", variant="primary")
+                    cancel_btn = gr.Button("取消处理", variant="secondary")
 
                 with gr.Row():
                     status_display = gr.JSON(label="处理状态")
@@ -624,6 +649,14 @@ def create_gradio_interface():
             inputs=None,
             outputs=timer,
             show_progress="hidden"
+        )
+
+        # queue=False：取消需立即执行，不能等长任务跑完才轮到
+        cancel_btn.click(
+            cancel_processing,
+            inputs=[status_display],
+            outputs=[status_display],
+            queue=False,
         )
 
         reanalyze_btn.click(
