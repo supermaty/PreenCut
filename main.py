@@ -3,6 +3,8 @@ import os
 os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "0"
 os.environ['TORCHAUDIO_USE_SOUNDFILE'] = '1'
 
+from starlette.requests import ClientDisconnect
+from starlette.responses import JSONResponse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
@@ -33,6 +35,13 @@ uvicorn_logger.addFilter(LogFilter())
 
 
 app = FastAPI()
+
+
+@app.exception_handler(ClientDisconnect)
+def handle_client_disconnect(request, exc):
+    """客户端在上传/请求过程中断开（刷新、关页、网络中断）时不再抛出未处理异常，避免刷屏日志。"""
+    return JSONResponse(status_code=499, content={"detail": "client disconnected"})
+
 
 # 跨域中间件
 origins = ["*"]
@@ -65,6 +74,7 @@ print(f"  计算设备: {config.WHISPER_DEVICE}")
 print(f"  计算类型: {config.WHISPER_COMPUTE_TYPE}")
 print(f"  使用GPU: {config.WHISPER_GPU_IDS}")
 print(f"  批处理大小: {config.WHISPER_BATCH_SIZE}")
+print(f"  单文件最大时长: {config.MAX_DURATION_SECONDS / 60:.0f} 分钟 ({config.MAX_DURATION_SECONDS} 秒)")
 
 # 创建Gradio界面
 gradio_app = create_gradio_interface()

@@ -1,10 +1,11 @@
 import faster_whisper
-import json
-import os
 import zhconv
-from datetime import datetime
 
 from modules.speech_recognizers.speech_recognizer import SpeechRecognizer
+from config import (
+    WHISPER_INITIAL_PROMPT,
+    VAD_MIN_SILENCE_DURATION_MS,
+)
 
 
 class FasterWhisperSpeechRecognizer(SpeechRecognizer):
@@ -18,12 +19,14 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             compute_type,
             batch_size=16,
             beam_size=5,
+            language=None,
     ):
         super().__init__(model_size, device, device_index=device_index,
                          compute_type=compute_type,
                          batch_size=batch_size)
         if beam_size > 0:
             self.beam_size = beam_size
+        self.language = language
         print(f"加载Whisper模型: {self.model_size}")
         print(f"device = {self.device}")
         print(f"{self.model_size, self.device, self.compute_type, self.opts}")
@@ -45,13 +48,20 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
         print(f"batch size = {self.batch_size}")
         audio = faster_whisper.decode_audio(audio_path)
         print("load audio success")
-        segments, info = self.model.transcribe(
-            audio,
-            initial_prompt="请使用简体中文输出。Add punctuation after end of each line. 就比如说，我要先去吃饭。Segment at end of each sentence.",
+        kwargs = dict(
             word_timestamps=False,
             vad_filter=True,
-            beam_size=self.beam_size
+            beam_size=self.beam_size,
         )
+        if WHISPER_INITIAL_PROMPT:
+            kwargs["initial_prompt"] = WHISPER_INITIAL_PROMPT
+        if self.language is not None:
+            kwargs["language"] = self.language
+        if VAD_MIN_SILENCE_DURATION_MS is not None:
+            kwargs["vad_parameters"] = dict(
+                min_silence_duration_ms=VAD_MIN_SILENCE_DURATION_MS,
+            )
+        segments, info = self.model.transcribe(audio, **kwargs)
 
         segment_list = []
 
@@ -68,11 +78,7 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
                 'text': simplified_text
             })
 
-        # 把segment_list写入到 segment_list.json 文件
-        json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'segment-data', f'segment_list_{self.model_size}_{datetime.now().strftime("%Y%m%d%H%M%S")}.json')
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(segment_list, f, ensure_ascii=False, indent=4)
-        
+        # 断句文件改为在 processing_queue 中写入（纠错+对齐后的版本），此处不再写原始 ASR 结果
         # format result
         result = {"language": info.language, "segments": segment_list}
         return result

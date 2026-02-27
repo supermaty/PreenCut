@@ -83,17 +83,31 @@ def process_files(files: List, llm_model: str,
                   temperature: float,
                   prompt: Optional[str] = None,
                   whisper_model_size: Optional[str] = None,
-                  enable_alignment=None, max_line_length=16) -> Tuple[
-    str, Dict]:
-    """处理上传的文件"""
-
+                  enable_alignment=None, max_line_length=32) -> Tuple[
+    str, Dict, float]:
+    """处理上传的文件，返回 (task_id, status_display, progress_initial)."""
     # 检查上传的文件是否符合要求
     saved_paths = check_uploaded_files(files)
+
+    # 上传去重：同一路径只保留一条（避免重复选择同一文件被处理多次）
+    original_count = len(saved_paths)
+    seen_paths = set()
+    deduped_paths = []
+    for p in saved_paths:
+        norm = os.path.normpath(os.path.abspath(p))
+        if norm not in seen_paths:
+            seen_paths.add(norm)
+            deduped_paths.append(p)
+    saved_paths = deduped_paths
+    dup_count = original_count - len(saved_paths)
+
+    if not saved_paths:
+        raise gr.Error("去重后没有可处理的文件，请重新选择。")
 
     # 创建唯一任务ID
     task_id = f"task_{uuid.uuid4().hex}"
 
-    print(f"添加任务: {task_id}, 文件路径: {saved_paths}", flush=True)
+    print(f"添加任务: {task_id}, 文件路径: {saved_paths}" + (f", 已忽略 {dup_count} 个重复" if dup_count else ""), flush=True)
 
     # 添加到处理队列
     if enable_alignment == "开启":
@@ -105,13 +119,32 @@ def process_files(files: List, llm_model: str,
                               whisper_model_size, enable_alignment,
                               max_line_length)
 
-    return task_id, {"status": "已加入队列，请稍候..."}
+    status_msg = f"已加入队列，共 {len(saved_paths)} 个文件，请稍候..."
+    if dup_count > 0:
+        status_msg = f"已忽略 {dup_count} 个重复文件。{status_msg}"
+    return task_id, {"status": status_msg}, 0.0
+
+
+def cancel_processing(status_display: Dict) -> Dict:
+    """请求取消当前任务。从 status_display 中取 task_id，与界面显示一致。"""
+    display = status_display or {}
+    tid = (display.get("task_id") or "").strip()
+    print(f"[取消] 点击取消处理: status_display keys={list(display.keys())}, task_id={tid!r}", flush=True)
+    if not tid:
+        print("[取消] 无 task_id，无法取消", flush=True)
+        return display
+    ok = processing_queue.cancel_task(tid)
+    print(f"[取消] cancel_task({tid!r}) -> {ok}", flush=True)
+    if ok:
+        return {"task_id": tid, "status": "正在取消..."}
+    return display
 
 
 def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
-        Tuple[Dict, List, List, gr.Timer]:
-    """检查任务状态"""
+        Tuple[Dict, List, List, float, gr.Timer]:
+    """检查任务状态，返回 (file_download, srt_download, status_display, result_table, segment_selection, asr_result, progress, timer)."""
     result = processing_queue.get_result(task_id)
+    progress = result.get("progress", 0.0)
 
     if result["status"] == "completed":
         # 整理结果以便显示
@@ -179,6 +212,7 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             display_result,
             clip_result,
             asr_result,
+            1.0,
             gr.Timer(active=False)
         )
 
@@ -187,28 +221,37 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             [], [],
             {"task_id": task_id,
              "status": f"错误: {result.get('error', '未知错误')}"},
-            [], [], '', gr.update()
+            [], [], '', progress, gr.Timer(active=False)
         )
     elif result["status"] == "queued":
         return (
             [], [],
             {"task_id": task_id,
              "status": f"排队中, 前面还有{processing_queue.get_queue_size()}个任务"},
-            [], [], '', gr.update()
+            [], [], '', 0.0, gr.update()
+        )
+    elif result["status"] == "cancelled":
+        return (
+            [], [],
+            {"task_id": task_id, "status": "已取消"},
+            [], [], '', result.get("progress", 0.0), gr.Timer(active=False)
         )
 
     if task_id:
+        # 已请求取消但当前步骤尚未结束：主状态显示「取消中」
+        status_label = "取消中" if result.get("cancel_requested") else "处理中..."
         return (
             [], [],
-            {"task_id": task_id, "status": "处理中...",
-             "status_info": result.get("status_info", "")},
-            [], [], '', gr.update()
+            {"task_id": task_id, "status": status_label,
+             "status_info": result.get("status_info", ""),
+             "progress": progress},
+            [], [], '', progress, gr.update()
         )
     else:
         return (
             [], [],
             {"task_id": "", "status": ""},
-            [], [], '', gr.update()
+            [], [], '', 0.0, gr.update()
         )
 
 
@@ -220,6 +263,20 @@ def select_clip(segment_selection: List[List], evt: gr.SelectData) -> List[
     selected_row[0] = CHECKBOX_CHECKED \
         if selected_row[0] == CHECKBOX_UNCHECKED else CHECKBOX_UNCHECKED
     return segment_selection
+
+
+def select_all_segments(segment_selection: List[List]) -> List[List]:
+    """全选所有片段"""
+    if not segment_selection:
+        return segment_selection
+    return [[CHECKBOX_CHECKED] + list(row[1:]) for row in segment_selection]
+
+
+def deselect_all_segments(segment_selection: List[List]) -> List[List]:
+    """取消全选"""
+    if not segment_selection:
+        return segment_selection
+    return [[CHECKBOX_UNCHECKED] + list(row[1:]) for row in segment_selection]
 
 
 def clip_and_download(status_display: Dict,
@@ -340,7 +397,10 @@ def clip_and_download(status_display: Dict,
             '-c', 'copy', combined_path
         ]
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd, check=True, capture_output=True, text=True,
+                encoding='utf-8', errors='replace'
+            )
         except subprocess.CalledProcessError as e:
             error_msg = f"FFmpeg 错误 (返回码: {e.returncode}):\n"
             error_msg += f"命令: {' '.join(cmd)}\n"
@@ -469,7 +529,7 @@ def create_gradio_interface():
                         value=DEFAULT_ENABLE_ALIGNMENT
                     )
                     max_line_length = gr.Slider(minimum=1, maximum=50, step=1,
-                                                value=16,
+                                                value=32,
                                                 label="单条字幕最大长度(仅对中文有效)",
                                                 visible=True)
 
@@ -478,11 +538,22 @@ def create_gradio_interface():
                     value="找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。特别指令：对于长段落的产品介绍，必须提取完整的中间讲述过程，严禁只截取开头结尾。执行策略为“宁多勿少”，凡是涉及该品牌或产品的上下文关联内容（包括铺垫和总结），请全部保留，确保内容完整性以供商务核算。",
                     lines=2
                 )
-                process_btn = gr.Button("开始处理", variant="primary")
+                with gr.Row():
+                    process_btn = gr.Button("开始处理", variant="primary")
+                    cancel_btn = gr.Button("取消处理", variant="secondary")
 
                 with gr.Row():
                     status_display = gr.JSON(label="处理状态")
                     task_id = gr.Textbox(visible=False)
+                progress_bar = gr.Slider(
+                    minimum=0,
+                    maximum=1,
+                    value=0,
+                    step=0.01,
+                    label="处理进度",
+                    interactive=False,
+                    visible=True,
+                )
 
             with gr.Column(scale=3):
                 with gr.Tab("分析结果"):
@@ -520,9 +591,22 @@ def create_gradio_interface():
                         type="array",
                         label="选择要保留的片段"
                     )
+                    with gr.Row():
+                        select_all_btn = gr.Button("全选", variant="secondary")
+                        deselect_all_btn = gr.Button("取消全选", variant="secondary")
                     segment_selection.select(select_clip,
                                              inputs=segment_selection,
                                              outputs=segment_selection)
+                    select_all_btn.click(
+                        select_all_segments,
+                        inputs=[segment_selection],
+                        outputs=segment_selection
+                    )
+                    deselect_all_btn.click(
+                        deselect_all_segments,
+                        inputs=[segment_selection],
+                        outputs=segment_selection
+                    )
                     # 添加下载模式选择
                     download_mode = gr.Radio(
                         choices=["打包成zip文件", "合并成一个文件"],
@@ -539,23 +623,40 @@ def create_gradio_interface():
 
         # 定时器，用于轮询状态
         timer = gr.Timer(2, active=False)
-        timer.tick(check_status, inputs=[task_id, alignment, max_line_length],
-                   outputs=[file_download, srt_download, status_display,
-                            result_table,
-                            segment_selection, asr_result,
-                            timer])
+        timer.tick(
+            check_status,
+            inputs=[task_id, alignment, max_line_length],
+            outputs=[
+                file_download,
+                srt_download,
+                status_display,
+                result_table,
+                segment_selection,
+                asr_result,
+                progress_bar,
+                timer,
+            ],
+        )
 
         # 事件处理
         process_btn.click(
             process_files,
             inputs=[file_upload, llm_model, temperature, prompt_input,
                     model_size, alignment, max_line_length],
-            outputs=[task_id, status_display]
+            outputs=[task_id, status_display, progress_bar],
         ).then(
             lambda: gr.Timer(active=True),
             inputs=None,
             outputs=timer,
             show_progress="hidden"
+        )
+
+        # queue=False：取消需立即执行，不能等长任务跑完才轮到
+        cancel_btn.click(
+            cancel_processing,
+            inputs=[status_display],
+            outputs=[status_display],
+            queue=False,
         )
 
         reanalyze_btn.click(

@@ -70,8 +70,10 @@ def get_audio_codec(input_file):
         "-of", "json",
         input_file
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True)
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding='utf-8', errors='replace'
+    )
     info = json.loads(result.stdout)
     return info["streams"][0]["codec_name"]
 
@@ -372,8 +374,10 @@ def get_media_duration(file_path: str) -> float:
         file_path
     ]
     try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              text=True, timeout=10)
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, timeout=10, encoding='utf-8', errors='replace'
+        )
         if result.returncode == 0:
             duration = float(result.stdout.strip())
             return duration
