@@ -5,7 +5,8 @@ from config import (
     WHISPER_COMPUTE_TYPE,
     WHISPER_GPU_IDS,
     WHISPER_BATCH_SIZE,
-    FASTER_WHISPER_BEAM_SIZE
+    FASTER_WHISPER_BEAM_SIZE,
+    WHISPER_LANGUAGE,
 )
 
 
@@ -23,7 +24,8 @@ class SpeechRecognizerFactory:
                 WHISPER_DEVICE,
                 compute_type=WHISPER_COMPUTE_TYPE,
                 device_index=WHISPER_GPU_IDS,
-                beam_size=FASTER_WHISPER_BEAM_SIZE
+                beam_size=FASTER_WHISPER_BEAM_SIZE,
+                language=WHISPER_LANGUAGE
             )
         elif type == 'whisperx':
             from modules.speech_recognizers.whisperx_speech_recognizer import \
