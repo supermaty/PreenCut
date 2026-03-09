@@ -26,10 +26,10 @@ import subprocess
 
 # 全局实例
 processing_queue = ProcessingQueue()
-CHECKBOX_CHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue; background:#4B6BFB ;font-weight: bold;color:white;align-items:center;justify-content:center">✓</span>'
-CHECKBOX_UNCHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue;font-weight: bold;color:white;align-items:center;justify-content:center"></span>'
-# 任务详情表「选择」列：正方形复选框（选中/未选中）
-TASK_SELECT_CHECKED = '<span style="display:inline-block;width:16px;height:16px;border:2px solid #333;background:#4B6BFB;color:white;text-align:center;line-height:14px;font-size:11px;vertical-align:middle">✓</span>'
+CHECKBOX_CHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid #333; background:#E85A42; font-weight: bold; color:white; align-items:center; justify-content:center">✓</span>'
+CHECKBOX_UNCHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid #333; font-weight: bold; color:white; align-items:center; justify-content:center"></span>'
+# 任务详情表「选择」列：正方形复选框（选中=深橘色）
+TASK_SELECT_CHECKED = '<span style="display:inline-block;width:16px;height:16px;border:2px solid #333;background:#E85A42;color:white;text-align:center;line-height:14px;font-size:11px;vertical-align:middle">✓</span>'
 TASK_SELECT_UNCHECKED = '<span style="display:inline-block;width:16px;height:16px;border:2px solid #333;background:#fff;vertical-align:middle"></span>'
 # 空 Dataframe 占位，避免 Gradio 将 [] 序列化为 '' 导致 DataframeData 校验报错
 EMPTY_RESULT_TABLE: List[List] = [["", "", "", "", "", ""]]
@@ -147,18 +147,33 @@ def cancel_processing(status_display: Dict) -> Dict:
     return display
 
 
+def _status_tag_html(status: str, status_display: str) -> str:
+    """根据任务状态返回带艺术风格样式的标签 HTML。"""
+    status = (status or "").strip().lower()
+    if status == "processing":
+        cls = "preencut-tag preencut-tag-processing"
+    elif status == "completed":
+        cls = "preencut-tag preencut-tag-done"
+    elif status in ("queued", "cancelled", "not_found"):
+        cls = "preencut-tag preencut-tag-pending"
+    else:
+        cls = "preencut-tag preencut-tag-error"
+    return f'<span class="{cls}">{status_display}</span>'
+
+
 def get_task_detail_list(selected_task_id: Optional[str] = None) -> Tuple[List[List], List[str]]:
-    """获取任务详情表格数据。返回 (rows, task_ids_list)，选择列为正方形复选框 HTML。"""
+    """获取任务详情表格数据。返回 (rows, task_ids_list)，选择列为正方形复选框 HTML，状态列为标签 HTML。"""
     summary = processing_queue.get_all_tasks_summary()
     rows = []
     task_ids_list = []
     for s in summary:
         tid = s["task_id"]
         sel = TASK_SELECT_CHECKED if tid == selected_task_id else TASK_SELECT_UNCHECKED
-        rows.append([sel, s["task_id_short"], s["status_display"], s["files_info"], s["submit_time"]])
+        status_html = _status_tag_html(s.get("status", ""), s["status_display"])
+        rows.append([sel, s["task_id_short"], status_html, s["files_info"], s["submit_time"]])
         task_ids_list.append(tid)
     if not rows:
-        rows = [[TASK_SELECT_UNCHECKED, "-", "暂无任务", "-", "-"]]
+        rows = [[TASK_SELECT_UNCHECKED, "-", '<span class="preencut-tag preencut-tag-pending">暂无任务</span>', "-", "-"]]
     return rows, task_ids_list
 
 
@@ -681,10 +696,154 @@ TECH_ASSISTANT_HEAD = """
 </script>
 """
 
+# 艺术风格界面主题：配色、按钮、标签、菜单、字体、表格（见需求文档）
+PRECUT_THEME_HEAD = """
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+"""
+PRECUT_THEME_CSS = """
+/* 配色：按钮默认浅灰，悬浮浅橘色，点击深橘色；界面浅蓝全部改为浅橘 */
+:root {
+  --preencut-btn-default: #E8E8E8;
+  --preencut-light-orange: #FFE4D6;
+  --preencut-dark-orange: #E85A42;
+  --preencut-text: #333333;
+  --preencut-text-muted: #666666;
+}
+
+/* 全局：浅蓝背景全部替换为浅橘色 */
+.gradio-container { background: #FFF8F5 !important; font-family: 'Roboto', sans-serif !important; }
+.gr-block, .gr-box, .block, [class*="block"] { background: #FFFFFF !important; }
+.gr-form, .gr-input, .gr-padded { font-family: 'Roboto', sans-serif !important; }
+
+/* 全站按钮默认浅灰（Gradio 默认的浅蓝等由下方各按钮规则覆盖） */
+.gradio-container button.gr-button, .gradio-container .gr-button {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+}
+
+/* 标题与正文 */
+h1, .gr-markdown h1 { font-family: 'Roboto', sans-serif !important; font-weight: 700 !important; font-size: 24px !important; color: var(--preencut-text) !important; }
+.gr-markdown p, .gr-label, label { font-family: 'Roboto', sans-serif !important; font-size: 14px !important; color: var(--preencut-text-muted) !important; line-height: 1.5 !important; }
+.gr-markdown { color: var(--preencut-text-muted) !important; }
+
+/* 所有按钮统一：默认浅灰，悬浮浅橘，点击深橘 */
+.gradio-container .preencut-btn-action button,
+.gradio-container .preencut-btn-action .gr-button,
+.gradio-container .preencut-btn-action [class*="primary"] {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+  font-family: 'Roboto', sans-serif !important; font-weight: 700 !important; font-size: 16px !important;
+  border-radius: 6px !important; padding: 10px 20px !important; margin: 10px !important;
+  border: none !important;
+  min-height: 44px !important; align-items: center !important; justify-content: center !important;
+}
+.gradio-container .preencut-btn-action button:hover,
+.gradio-container .preencut-btn-action .gr-button:hover,
+.gradio-container .preencut-btn-action button.primary:hover {
+  background: var(--preencut-light-orange) !important; background-color: var(--preencut-light-orange) !important; color: var(--preencut-text) !important; box-shadow: none !important;
+}
+.gradio-container .preencut-btn-action button:active,
+.gradio-container .preencut-btn-action .gr-button:active {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+}
+
+#btn-start-process, #btn-task-detail,
+#btn-start-process button, #btn-start-process .gr-button,
+#btn-task-detail button, #btn-task-detail .gr-button {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+}
+#btn-start-process:hover, #btn-task-detail:hover,
+#btn-start-process button:hover, #btn-start-process .gr-button:hover,
+#btn-task-detail button:hover, #btn-task-detail .gr-button:hover {
+  background: var(--preencut-light-orange) !important; background-color: var(--preencut-light-orange) !important; color: var(--preencut-text) !important;
+}
+#btn-start-process:active, #btn-task-detail:active,
+#btn-start-process button:active, #btn-task-detail button:active {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+}
+
+/* 所有 primary 按钮（上传、下载等）：默认浅灰，悬浮浅橘，点击深橘 */
+.gradio-container button.primary, .gradio-container .gr-button.primary,
+.gradio-container [class*="primary"] button, .gradio-container .gr-button[class*="primary"] {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+  border: none !important; border-radius: 6px !important;
+}
+.gradio-container button.primary:hover, .gradio-container .gr-button.primary:hover,
+.gradio-container [class*="primary"] button:hover {
+  background: var(--preencut-light-orange) !important; background-color: var(--preencut-light-orange) !important; color: var(--preencut-text) !important;
+}
+.gradio-container button.primary:active, .gradio-container .gr-button.primary:active {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+}
+
+/* 次要按钮：默认浅灰，悬浮浅橘，点击深橘 */
+button.gr-button.secondary, .gr-button.secondary {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+  font-family: 'Roboto', sans-serif !important; font-size: 14px !important;
+  border-radius: 6px !important; padding: 8px 16px !important; margin: 10px !important;
+  border: none !important;
+}
+button.gr-button.secondary:hover, .gr-button.secondary:hover {
+  background: var(--preencut-light-orange) !important; background-color: var(--preencut-light-orange) !important; color: var(--preencut-text) !important;
+}
+button.gr-button.secondary:active, .gr-button.secondary:active {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+}
+
+/* 标签 Tag：浅橘/深橘系 */
+.preencut-tag { border-radius: 12px !important; font-family: 'Roboto', sans-serif !important; font-size: 12px !important; padding: 6px 12px !important; display: inline-block !important; }
+.preencut-tag-processing { background: var(--preencut-light-orange) !important; color: var(--preencut-dark-orange) !important; }
+.preencut-tag-done { background: var(--preencut-dark-orange) !important; color: #FFFFFF !important; }
+.preencut-tag-pending { background: var(--preencut-btn-default) !important; color: var(--preencut-text-muted) !important; }
+.preencut-tag-error { background: #FFCDD2 !important; color: #C62828 !important; }
+
+/* Tabs：未选中浅灰，悬浮浅橘，选中深橘 */
+.gr-tabs .tab-nav, .tabs-nav, [class*="tabs"] button {
+  background: var(--preencut-btn-default) !important; background-color: var(--preencut-btn-default) !important; color: var(--preencut-text) !important;
+  font-family: 'Roboto', sans-serif !important; font-size: 14px !important;
+  border: none !important; border-radius: 6px !important;
+}
+.gr-tabs .tab-nav button.selected, .tabs-nav button.selected, [class*="tabs"] button.selected {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+}
+.gr-tabs .tab-nav button:not(.selected):hover, [class*="tabs"] button:not(.selected):hover {
+  background: var(--preencut-light-orange) !important; background-color: var(--preencut-light-orange) !important; color: var(--preencut-text) !important;
+}
+
+/* 表格表头：深橘色；表格偶数行浅橘替代浅蓝 */
+.gr-dataframe th, .dataframe th, table.gr-table thead th {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important;
+  font-family: 'Roboto', sans-serif !important; font-weight: 700 !important; font-size: 14px !important;
+  padding: 10px 20px !important;
+}
+.gr-dataframe td, .dataframe td, table.gr-table tbody td { color: var(--preencut-text) !important; padding: 10px 20px !important; }
+.gr-dataframe tbody tr:nth-child(even), .dataframe tbody tr:nth-child(even) { background: var(--preencut-light-orange) !important; }
+.gr-dataframe tbody tr:nth-child(odd), .dataframe tbody tr:nth-child(odd) { background: #FFFFFF !important; }
+
+/* 输入框、内边距 */
+.gr-input, .gr-textarea, input, textarea { font-family: 'Roboto', sans-serif !important; color: var(--preencut-text) !important; }
+.gr-form, .gr-padded { padding: 10px 20px !important; }
+.gr-block + .gr-block { margin: 15px 0 !important; }
+
+/* 焦点/选中：深橘色 */
+.gr-input:focus, .gr-textarea:focus, input:focus, textarea:focus,
+.gr-dropdown:focus-within, .gr-number:focus-within,
+[class*="input"]:focus, [class*="textarea"]:focus {
+  border-color: var(--preencut-dark-orange) !important; box-shadow: 0 0 0 1px var(--preencut-dark-orange) !important;
+}
+.gr-radio input:checked + span, .gr-checkbox input:checked + span { color: var(--preencut-dark-orange) !important; }
+.gr-radio .selected, .gr-radio [data-selected="true"], .gr-radio label.selected,
+.gradio-container .gr-radio button.primary, .gradio-container .gr-radio .wrap.selected {
+  background: var(--preencut-dark-orange) !important; background-color: var(--preencut-dark-orange) !important; color: #FFFFFF !important; border-color: var(--preencut-dark-orange) !important;
+}
+/* 滑块：轨道与拇指深橘色 */
+.gr-slider input[type="range"]::-webkit-slider-thumb { background: var(--preencut-dark-orange) !important; }
+.gr-slider input[type="range"]::-moz-range-thumb { background: var(--preencut-dark-orange) !important; }
+.gr-slider .gr-progress, .gr-slider [class*="progress"], .gr-slider input[type="range"]::-webkit-slider-runnable-track { background: var(--preencut-dark-orange) !important; }
+"""
+
 
 def create_gradio_interface():
     """创建Gradio界面"""
-    with gr.Blocks(title="PreenCut", theme=gr.themes.Soft(), head=TECH_ASSISTANT_HEAD) as app:
+    with gr.Blocks(title="PreenCut", theme=gr.themes.Soft(), head=TECH_ASSISTANT_HEAD + PRECUT_THEME_HEAD, css=PRECUT_THEME_CSS) as app:
         gr.Markdown("# 🎬 PreenCut-AI视频剪辑助手")
         gr.Markdown(
             "上传包含语音的视频/音频文件，AI将自动识别语音内容、智能分段，并允许您输入自然语言进行检索。")
@@ -736,8 +895,8 @@ def create_gradio_interface():
                     lines=2
                 )
                 with gr.Row():
-                    process_btn = gr.Button("开始处理", variant="primary")
-                    cancel_btn = gr.Button("取消处理", variant="secondary")
+                    process_btn = gr.Button("开始处理", variant="primary", elem_id="btn-start-process", elem_classes=["preencut-btn-action"])
+                    task_detail_btn = gr.Button("任务详情", variant="primary", elem_id="btn-task-detail", elem_classes=["preencut-btn-action"])
 
                 with gr.Row():
                     status_display = gr.JSON(label="处理状态")
@@ -755,133 +914,135 @@ def create_gradio_interface():
                 timer = gr.Timer(2, active=True)
 
             with gr.Column(scale=3):
-                with gr.Tab("分析结果"):
-                    file_download = gr.File(label="下载分析结果")
-                    result_table = gr.Dataframe(
-                        headers=["文件名", "开始时间", "结束时间", "时长",
-                                 "内容摘要", "标签"],
-                        datatype=["str", "str", "str", "str", "str", "str", "str"],
-                        interactive=True,
-                        wrap=True
-                    )
+                right_tabs = gr.Tabs(selected=0)
+                with right_tabs:
+                    with gr.Tab("分析结果"):
+                        file_download = gr.File(label="下载分析结果")
+                        result_table = gr.Dataframe(
+                            headers=["文件名", "开始时间", "结束时间", "时长",
+                                     "内容摘要", "标签"],
+                            datatype=["str", "str", "str", "str", "str", "str", "str"],
+                            interactive=True,
+                            wrap=True
+                        )
 
-                with gr.Tab("任务详情"):
-                    _task_rows0, _task_ids0 = get_task_detail_list()
-                    task_ids_state = gr.State(value=_task_ids0)
-                    selected_task_state = gr.State(value="")
-                    confirm_pending_state = gr.State(value="")
-                    task_detail_table = gr.Dataframe(
-                        headers=["选择", "任务ID", "状态", "文件", "提交时间"],
-                        datatype=["html", "str", "str", "str", "str"],
-                        interactive=False,
-                        wrap=True,
-                        label="点击一行选中该任务（方框内 ✓ 表示选中），再点击下方按钮执行进度查询、取消或删除。",
-                        value=_task_rows0,
-                    )
-                    with gr.Row():
-                        query_progress_btn = gr.Button("进度查询", variant="primary")
-                        cancel_confirm_btn = gr.Button("取消", variant="secondary")
-                        delete_confirm_btn = gr.Button("删除", variant="secondary")
-                    with gr.Column(visible=False) as confirm_dialog_column:
-                        confirm_dialog_msg = gr.Markdown("", elem_id="confirm_dialog_msg")
+                    with gr.Tab("任务详情"):
+                        _task_rows0, _task_ids0 = get_task_detail_list()
+                        task_ids_state = gr.State(value=_task_ids0)
+                        selected_task_state = gr.State(value="")
+                        confirm_pending_state = gr.State(value="")
+                        task_detail_table = gr.Dataframe(
+                            headers=["选择", "任务ID", "状态", "文件", "提交时间"],
+                            datatype=["html", "str", "html", "str", "str"],
+                            interactive=False,
+                            wrap=True,
+                            label="点击一行选中该任务（方框内 ✓ 表示选中），再点击下方按钮执行进度查询、取消或删除。",
+                            value=_task_rows0,
+                        )
                         with gr.Row():
-                            confirm_ok_btn = gr.Button("确认", variant="primary")
-                            confirm_close_btn = gr.Button("关闭", variant="secondary")
-                    progress_info_display = gr.Textbox(
-                        label="选中任务进度",
-                        lines=6,
-                        interactive=False,
-                        placeholder="先在表格中点击一行选中任务，再点击「进度查询」查看进度并加载到分析结果/剪辑选项/字幕文件等 Tab。",
-                    )
-                    cancel_feedback = gr.Textbox(
-                        label="操作反馈",
-                        interactive=False,
-                        visible=True,
-                    )
-                    task_detail_table.select(
-                        on_task_table_select,
-                        inputs=[task_ids_state],
-                        outputs=[task_detail_table, task_ids_state, selected_task_state],
-                    )
-                    cancel_confirm_btn.click(
-                        ask_confirm_cancel,
-                        inputs=[selected_task_state],
-                        outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
-                        queue=False,
-                    )
-                    delete_confirm_btn.click(
-                        ask_confirm_delete,
-                        inputs=[selected_task_state],
-                        outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
-                        queue=False,
-                    )
-                    # 弹框内「确认」：根据当前是取消还是删除执行对应操作并关闭弹框
-                    confirm_ok_btn.click(
-                        do_confirm_action,
-                        inputs=[selected_task_state, confirm_pending_state],
-                        outputs=[task_detail_table, task_ids_state, selected_task_state, cancel_feedback, confirm_pending_state, confirm_dialog_column],
-                    )
-                    confirm_close_btn.click(
-                        close_confirm_dialog,
-                        inputs=None,
-                        outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column],
-                        queue=False,
-                    )
+                            query_progress_btn = gr.Button("进度查询", variant="primary", elem_classes=["preencut-btn-action"])
+                            cancel_confirm_btn = gr.Button("取消", variant="secondary")
+                            delete_confirm_btn = gr.Button("删除", variant="secondary")
+                        with gr.Column(visible=False) as confirm_dialog_column:
+                            confirm_dialog_msg = gr.Markdown("", elem_id="confirm_dialog_msg")
+                            with gr.Row():
+                                confirm_ok_btn = gr.Button("确认", variant="primary", elem_classes=["preencut-btn-action"])
+                                confirm_close_btn = gr.Button("关闭", variant="secondary")
+                        progress_info_display = gr.Textbox(
+                            label="选中任务进度",
+                            lines=6,
+                            interactive=False,
+                            placeholder="先在表格中点击一行选中任务，再点击「进度查询」查看进度并加载到分析结果/剪辑选项/字幕文件等 Tab。",
+                        )
+                        cancel_feedback = gr.Textbox(
+                            label="操作反馈",
+                            interactive=False,
+                            visible=True,
+                        )
+                        task_detail_table.select(
+                            on_task_table_select,
+                            inputs=[task_ids_state],
+                            outputs=[task_detail_table, task_ids_state, selected_task_state],
+                        )
+                        cancel_confirm_btn.click(
+                            ask_confirm_cancel,
+                            inputs=[selected_task_state],
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
+                            queue=False,
+                        )
+                        delete_confirm_btn.click(
+                            ask_confirm_delete,
+                            inputs=[selected_task_state],
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
+                            queue=False,
+                        )
+                        # 弹框内「确认」：根据当前是取消还是删除执行对应操作并关闭弹框
+                        confirm_ok_btn.click(
+                            do_confirm_action,
+                            inputs=[selected_task_state, confirm_pending_state],
+                            outputs=[task_detail_table, task_ids_state, selected_task_state, cancel_feedback, confirm_pending_state, confirm_dialog_column],
+                        )
+                        confirm_close_btn.click(
+                            close_confirm_dialog,
+                            inputs=None,
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column],
+                            queue=False,
+                        )
 
-                with gr.Tab("重新分析"):
-                    new_prompt = gr.Textbox(
-                        label="输入新的分析提示",
-                        placeholder="例如：找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。",
-                        lines=2
-                    )
-                    reanalyze_llm_model = gr.Dropdown(
-                        choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="gemini-3", label="大语言模型")
-                    reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
-                                                     step=0.1, value=1,
-                                                     label="摘要生成灵活度(temperature)")
-                    reanalyze_btn = gr.Button("重新分析", variant="secondary")
+                    with gr.Tab("重新分析"):
+                        new_prompt = gr.Textbox(
+                            label="输入新的分析提示",
+                            placeholder="例如：找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。",
+                            lines=2
+                        )
+                        reanalyze_llm_model = gr.Dropdown(
+                            choices=[model['label'] for model in LLM_MODEL_OPTIONS],
+                            value="gemini-3", label="大语言模型")
+                        reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
+                                                         step=0.1, value=1,
+                                                         label="摘要生成灵活度(temperature)")
+                        reanalyze_btn = gr.Button("重新分析", variant="secondary")
 
-                with gr.Tab("剪辑选项"):
-                    segment_selection = gr.Dataframe(
-                        headers=["选择", "文件名", "开始时间", "结束时间",
-                                 "时长",
-                                 "内容摘要", "标签"],
-                        datatype='html',
-                        interactive=False,
-                        wrap=True,
-                        type="array",
-                        label="选择要保留的片段"
-                    )
-                    with gr.Row():
-                        select_all_btn = gr.Button("全选", variant="secondary")
-                        deselect_all_btn = gr.Button("取消全选", variant="secondary")
-                    segment_selection.select(select_clip,
-                                             inputs=segment_selection,
-                                             outputs=segment_selection)
-                    select_all_btn.click(
-                        select_all_segments,
-                        inputs=[segment_selection],
-                        outputs=segment_selection
-                    )
-                    deselect_all_btn.click(
-                        deselect_all_segments,
-                        inputs=[segment_selection],
-                        outputs=segment_selection
-                    )
-                    # 添加下载模式选择
-                    download_mode = gr.Radio(
-                        choices=["打包成zip文件", "合并成一个文件"],
-                        label="选择多个文件时的处理方式",
-                        value="打包成zip文件"
-                    )
-                    clip_btn = gr.Button("剪辑", variant="primary")
-                    download_output = gr.File(label="下载剪辑结果")
+                    with gr.Tab("剪辑选项"):
+                        segment_selection = gr.Dataframe(
+                            headers=["选择", "文件名", "开始时间", "结束时间",
+                                     "时长",
+                                     "内容摘要", "标签"],
+                            datatype='html',
+                            interactive=False,
+                            wrap=True,
+                            type="array",
+                            label="选择要保留的片段"
+                        )
+                        with gr.Row():
+                            select_all_btn = gr.Button("全选", variant="secondary")
+                            deselect_all_btn = gr.Button("取消全选", variant="secondary")
+                        segment_selection.select(select_clip,
+                                                 inputs=segment_selection,
+                                                 outputs=segment_selection)
+                        select_all_btn.click(
+                            select_all_segments,
+                            inputs=[segment_selection],
+                            outputs=segment_selection
+                        )
+                        deselect_all_btn.click(
+                            deselect_all_segments,
+                            inputs=[segment_selection],
+                            outputs=segment_selection
+                        )
+                        # 添加下载模式选择
+                        download_mode = gr.Radio(
+                            choices=["打包成zip文件", "合并成一个文件"],
+                            label="选择多个文件时的处理方式",
+                            value="打包成zip文件"
+                        )
+                        clip_btn = gr.Button("剪辑", variant="primary", elem_classes=["preencut-btn-action"])
+                        download_output = gr.File(label="下载剪辑结果")
 
-                with gr.Tab("字幕文件"):
-                    srt_download = gr.File(label='下载txt/srt文件')
-                    asr_result = gr.Text(label="语音识别结果", lines=20,
-                                         interactive=True)
+                    with gr.Tab("字幕文件"):
+                        srt_download = gr.File(label='下载txt/srt文件')
+                        asr_result = gr.Text(label="语音识别结果", lines=20,
+                                             interactive=True)
 
         # 进度查询：加载选中任务到各 Tab（需在 srt_download、asr_result 等定义之后绑定）
         query_progress_btn.click(
@@ -939,11 +1100,15 @@ def create_gradio_interface():
             show_progress="hidden"
         )
 
-        # queue=False：取消需立即执行，不能等长任务跑完才轮到
-        cancel_btn.click(
-            cancel_processing,
-            inputs=[status_display],
-            outputs=[status_display],
+        # 任务详情按钮：跳转到「任务详情」Tab，并与左侧当前任务关联（选中表格中对应行）
+        def go_to_task_detail_tab_and_select_current(current_task_id):
+            tid = (current_task_id or "").strip() if isinstance(current_task_id, str) else ""
+            rows, ids = get_task_detail_list(selected_task_id=tid if tid else None)
+            return gr.update(selected=1), rows, ids, tid
+        task_detail_btn.click(
+            go_to_task_detail_tab_and_select_current,
+            inputs=[task_id],
+            outputs=[right_tabs, task_detail_table, task_ids_state, selected_task_state],
             queue=False,
         )
 
