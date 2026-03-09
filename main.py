@@ -82,4 +82,6 @@ app = gr.mount_gradio_app(app, gradio_app, path="")
 
 if __name__ == "__main__":
     # 启动应用
-    uvicorn.run(app, host="localhost", port=7860)
+    # uvicorn.run(app, host="localhost", port=7860)  # 仅本机访问
+    # uvicorn.run(app, host="0.0.0.0", port=7860)  # 允许局域网内其他设备访问
+    uvicorn.run(app, host="0.0.0.0", port=7861)  # 本机 IP 192.168.63.66，访问 http://192.168.63.66:7861
