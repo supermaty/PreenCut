@@ -70,8 +70,10 @@ def get_audio_codec(input_file):
         "-of", "json",
         input_file
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True)
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding='utf-8', errors='replace'
+    )
     info = json.loads(result.stdout)
     return info["streams"][0]["codec_name"]
 
@@ -359,3 +361,35 @@ def format_time(seconds):
     seconds_part = seconds % 60
     milliseconds = int((seconds_part - int(seconds_part)) * 1000)
     return f"{hours:02}:{minutes:02}:{int(seconds_part):02},{milliseconds:03}"
+
+
+# 获取视频/音频时长
+def get_media_duration(file_path: str) -> float:
+    """使用 ffprobe 获取视频/音频时长（秒）"""
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        file_path
+    ]
+    try:
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, timeout=10, encoding='utf-8', errors='replace'
+        )
+        if result.returncode == 0:
+            duration = float(result.stdout.strip())
+            return duration
+        else:
+            print(f"ffprobe 错误: {result.stderr}")
+            return None
+    except subprocess.TimeoutExpired:
+        print(f"获取文件时长超时: {file_path}")
+        return None
+    except ValueError:
+        print(f"无法解析文件时长: {file_path}")
+        return None
+    except Exception as e:
+        print(f"获取文件时长异常: {e}")
+        return None

@@ -1,13 +1,16 @@
-from typing import Optional
-from typing import List, Dict
-import torch
+import os
+import uuid
 import re
+from typing import Optional, List, Dict
+import torch
 from modules.word_segmenter import WordSegmenter
 
 from config import (
     ALIGNMENT_MODEL,
     WHISPER_DEVICE,
-    ALIGNMENT_DEVICE
+    ALIGNMENT_DEVICE,
+    ALIGNMENT_CHUNK_DURATION_SECONDS,
+    TEMP_FOLDER,
 )
 
 
@@ -132,6 +135,43 @@ class TextAligner:
             raise ValueError(
                 f"Unsupported forced alignment model: {ALIGNMENT_MODEL}")
 
+    def _run_ctc_alignment(self, audio_path: str, segments: List[Dict]) -> List[Dict]:
+        """对单段音频运行 CTC 对齐，返回带 start/end/text 的 segments 列表。"""
+        from ctc_forced_aligner import (
+            generate_emissions,
+            preprocess_text,
+            get_alignments,
+            get_spans,
+            postprocess_results,
+        )
+        import soundfile as sf
+
+        alignment_model, alignment_tokenizer = self.model
+        waveform, sample_rate = sf.read(audio_path)
+        if waveform.ndim == 2:
+            waveform = waveform.mean(axis=0)
+        elif waveform.ndim > 2:
+            waveform = waveform.flatten()
+        assert waveform.ndim == 1
+        audio_waveform = torch.from_numpy(waveform).to(
+            dtype=alignment_model.dtype,
+            device=alignment_model.device
+        )
+        text = process_ctc_text(segments, self.language_code,
+                                self.word_segmenter, self.max_line_length)
+        emissions, stride = generate_emissions(
+            alignment_model, audio_waveform, batch_size=16
+        )
+        code_639_3 = to_639_3(self.language_code)
+        tokens_starred, text_starred = preprocess_text(
+            text, romanize=True, language=code_639_3,
+        )
+        segs, scores, blank_token = get_alignments(
+            emissions, tokens_starred, alignment_tokenizer,
+        )
+        spans = get_spans(tokens_starred, segs, blank_token)
+        return postprocess_results(text_starred, spans, stride, scores)
+
     def align(self, segments: List[Dict], audio_path: str) -> str:
         """将文本与音频对齐"""
         if ALIGNMENT_MODEL == 'whisperx':
@@ -144,47 +184,65 @@ class TextAligner:
                                     return_char_alignments=False)
             return result
         elif ALIGNMENT_MODEL == 'ctc-forced-aligner':
-            # TODO 非中文语言暂时直接返回segments，
-            #  因为使用ctc会按空格将单个句子分成多个segments,最后生成的srt每行只有一个单词
             if self.language_code != 'zh':
-                return {
-                    "segments": segments,
-                }
-            from ctc_forced_aligner import (
-                load_audio,
-                generate_emissions,
-                preprocess_text,
-                get_alignments,
-                get_spans,
-                postprocess_results,
-            )
+                return {"segments": segments}
+            from utils import get_media_duration
+            from modules.video_processor import VideoProcessor
 
-            alignment_model, alignment_tokenizer = self.model
-            audio_waveform = load_audio(audio_path, alignment_model.dtype,
-                                        alignment_model.device)
-            text = process_ctc_text(segments, self.language_code,
-                                    self.word_segmenter,
-                                    self.max_line_length)
-            emissions, stride = generate_emissions(
-                alignment_model, audio_waveform, batch_size=16
-            )
-            code_639_3 = to_639_3(self.language_code)
-            tokens_starred, text_starred = preprocess_text(
-                text,
-                romanize=True,
-                language=code_639_3,
-            )
-            segments, scores, blank_token = get_alignments(
-                emissions,
-                tokens_starred,
-                alignment_tokenizer,
-            )
-            spans = get_spans(tokens_starred, segments, blank_token)
-            result = postprocess_results(text_starred, spans, stride,
-                                         scores)
-            return {
-                "segments": result,
-            }
+            duration = get_media_duration(audio_path)
+            if duration is None or duration <= ALIGNMENT_CHUNK_DURATION_SECONDS:
+                # 短音频：整段对齐
+                result = self._run_ctc_alignment(audio_path, segments)
+                return {"segments": result}
+
+            # 长音频：按固定时长切分后分批对齐，避免 MemoryError
+            step_sec = ALIGNMENT_CHUNK_DURATION_SECONDS
+            num_chunks = max(1, int((duration + step_sec - 1e-6) // step_sec))
+            print(f"长音频分片对齐: 总长 {duration/60:.1f} 分钟，每片最多 {step_sec/60:.0f} 分钟，共 {num_chunks} 片")
+            temp_dir = os.path.join(TEMP_FOLDER, "align_chunks", str(uuid.uuid4()))
+            os.makedirs(temp_dir, exist_ok=True)
+            all_segments = []
+            t_start = 0.0
+            chunk_index = 0
+            try:
+                while t_start < duration:
+                    t_end = min(t_start + step_sec, duration)
+                    chunk_path = os.path.join(temp_dir, f"chunk_{chunk_index}.wav")
+                    VideoProcessor.extract_audio_segment(
+                        audio_path, t_start, t_end, chunk_path
+                    )
+                    segs_in_chunk = [
+                        s for s in segments
+                        if s["end"] > t_start and s["start"] < t_end
+                    ]
+                    segs_rel = [
+                        {
+                            "start": max(0.0, s["start"] - t_start),
+                            "end": min(t_end - t_start, s["end"] - t_start),
+                            "text": s["text"],
+                        }
+                        for s in segs_in_chunk
+                    ]
+                    if segs_rel:
+                        aligned = self._run_ctc_alignment(chunk_path, segs_rel)
+                        for seg in aligned:
+                            seg["start"] += t_start
+                            seg["end"] += t_start
+                            all_segments.append(seg)
+                    try:
+                        os.remove(chunk_path)
+                    except OSError:
+                        pass
+                    t_start = t_end
+                    chunk_index += 1
+                all_segments.sort(key=lambda s: (s["start"], s["end"]))
+                return {"segments": all_segments}
+            finally:
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception:
+                    pass
 
         else:
             raise ValueError(
