@@ -1,0 +1,96 @@
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@600;700&family=Righteous&display=swap" rel="stylesheet">
+<script>
+(function() {
+  var STORAGE_KEY = "preencut-nav-selected";
+  var NAV_BTN_IDS = ["btn-start-process", "btn-task-detail"];
+  function isNavButton(btn) {
+    if (!btn || !btn.closest) return false;
+    for (var i = 0; i < NAV_BTN_IDS.length; i++) {
+      if (btn.closest("#" + NAV_BTN_IDS[i])) return true;
+    }
+    return false;
+  }
+  function getNavButtonId(btn) {
+    if (!btn || !btn.closest) return null;
+    for (var i = 0; i < NAV_BTN_IDS.length; i++) {
+      if (btn.closest("#" + NAV_BTN_IDS[i])) return NAV_BTN_IDS[i];
+    }
+    return null;
+  }
+  function reapplyStayed() {
+    var id = sessionStorage.getItem(STORAGE_KEY);
+    if (!id || NAV_BTN_IDS.indexOf(id) === -1) return;
+    var el = document.getElementById(id);
+    if (!el) return;
+    var btn = el.querySelector && el.querySelector("button.gr-button");
+    if (!btn) return;
+    document.querySelectorAll("#btn-start-process .gr-button, #btn-task-detail .gr-button").forEach(function(b) {
+      b.classList.remove("preencut-btn-stayed");
+    });
+    btn.classList.add("preencut-btn-stayed");
+  }
+  function init() {
+    document.body.addEventListener("click", function(e) {
+      var btn = e.target && e.target.closest && e.target.closest("button.gr-button");
+      if (!btn) return;
+      var id = getNavButtonId(btn);
+      if (id) {
+        sessionStorage.setItem(STORAGE_KEY, id);
+        document.querySelectorAll("#btn-start-process .gr-button, #btn-task-detail .gr-button").forEach(function(b) {
+          b.classList.remove("preencut-btn-stayed");
+        });
+        btn.classList.add("preencut-btn-stayed");
+      }
+    });
+    var timer = null;
+    var observer = new MutationObserver(function() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function() {
+        timer = null;
+        reapplyStayed();
+      }, 50);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    reapplyStayed();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+
+(function() {
+  var TYPEWRITER_MS = 85;
+  function runTypewriter(el) {
+    if (!el || el.dataset.typewriterDone === "1") return;
+    var fullText = (el.textContent || "").trim();
+    if (!fullText) return;
+    el.dataset.typewriterDone = "1";
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      el.textContent = fullText;
+      return;
+    }
+    var cursor = document.createElement("span");
+    cursor.className = "preencut-title-en-cursor";
+    el.textContent = "";
+    el.appendChild(cursor);
+    var i = 0;
+    function tick() {
+      if (i <= fullText.length) {
+        el.textContent = fullText.slice(0, i);
+        el.appendChild(cursor);
+        i++;
+        setTimeout(tick, TYPEWRITER_MS);
+      } else {
+        cursor.remove();
+        el.textContent = fullText;
+      }
+    }
+    tick();
+  }
+  function tryTypewriter() {
+    document.querySelectorAll(".preencut-title-en").forEach(runTypewriter);
+  }
+  tryTypewriter();
+  var obs = new MutationObserver(function() { tryTypewriter(); });
+  obs.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
