@@ -1,0 +1,22 @@
+<script src="https://ai.goodideaggn.com/tech-assistant/tech-assistant.umd.js"></script>
+<script>
+(function() {
+  var appId = "app_6aaf7312ad1d";
+  function tryInit() {
+    if (window.TechAssistant && typeof window.TechAssistant.init === "function") {
+      window.TechAssistant.init({ applicationId: appId });
+      return true;
+    }
+    return false;
+  }
+  function initWhenReady() {
+    if (tryInit()) return;
+    var attempts = 0, maxAttempts = 25;
+    var t = setInterval(function() {
+      if (tryInit() || ++attempts >= maxAttempts) clearInterval(t);
+    }, 200);
+  }
+  if (document.readyState === "complete") initWhenReady();
+  else window.addEventListener("load", initWhenReady);
+})();
+</script>

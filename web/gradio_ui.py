@@ -24,14 +24,19 @@ from utils import seconds_to_hhmmss, hhmmss_to_seconds, clear_directory_fast \
 from typing import List, Dict, Tuple, Optional
 import subprocess
 
+from web.theme import get_theme_css, get_theme_head
+from web.ui_constants import (
+    CHECKBOX_CHECKED,
+    CHECKBOX_UNCHECKED,
+    TASK_SELECT_CHECKED,
+    TASK_SELECT_UNCHECKED,
+    EMPTY_RESULT_TABLE,
+    EMPTY_SEGMENT_SELECTION,
+    DEFAULT_ENABLE_ALIGNMENT,
+)
+
 # 全局实例
 processing_queue = ProcessingQueue()
-CHECKBOX_CHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue; background:#4B6BFB ;font-weight: bold;color:white;align-items:center;justify-content:center">✓</span>'
-CHECKBOX_UNCHECKED = '<span style="display: flex; width: 16px; height: 16px; border: 2px solid blue;font-weight: bold;color:white;align-items:center;justify-content:center"></span>'
-if ENABLE_ALIGNMENT:
-    DEFAULT_ENABLE_ALIGNMENT = '开启'
-else:
-    DEFAULT_ENABLE_ALIGNMENT = '关闭'
 
 
 def check_uploaded_files(files: List) -> str:
@@ -84,8 +89,8 @@ def process_files(files: List, llm_model: str,
                   prompt: Optional[str] = None,
                   whisper_model_size: Optional[str] = None,
                   enable_alignment=None, max_line_length=32) -> Tuple[
-    str, Dict, float]:
-    """处理上传的文件，返回 (task_id, status_display, progress_initial)."""
+    str, Dict, float, Optional[List]]:
+    """处理上传的文件，返回 (task_id, status_display, progress_initial, file_upload_clear)."""
     # 检查上传的文件是否符合要求
     saved_paths = check_uploaded_files(files)
 
@@ -122,7 +127,8 @@ def process_files(files: List, llm_model: str,
     status_msg = f"已加入队列，共 {len(saved_paths)} 个文件，请稍候..."
     if dup_count > 0:
         status_msg = f"已忽略 {dup_count} 个重复文件。{status_msg}"
-    return task_id, {"status": status_msg}, 0.0
+    # 返回 None 用于清空上传栏，便于用户继续上传下一批
+    return task_id, {"task_id": task_id, "status": status_msg}, 0.0, None
 
 
 def cancel_processing(status_display: Dict) -> Dict:
@@ -140,9 +146,174 @@ def cancel_processing(status_display: Dict) -> Dict:
     return display
 
 
-def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
-        Tuple[Dict, List, List, float, gr.Timer]:
-    """检查任务状态，返回 (file_download, srt_download, status_display, result_table, segment_selection, asr_result, progress, timer)."""
+def _status_tag_html(status: str, status_display: str) -> str:
+    """根据任务状态返回带艺术风格样式的标签 HTML。"""
+    status = (status or "").strip().lower()
+    if status == "processing":
+        cls = "preencut-tag preencut-tag-processing"
+    elif status == "completed":
+        cls = "preencut-tag preencut-tag-done"
+    elif status in ("queued", "cancelled", "not_found"):
+        cls = "preencut-tag preencut-tag-pending"
+    else:
+        cls = "preencut-tag preencut-tag-error"
+    return f'<span class="{cls}">{status_display}</span>'
+
+
+def get_task_detail_list(selected_task_id: Optional[str] = None) -> Tuple[List[List], List[str]]:
+    """获取任务详情表格数据。返回 (rows, task_ids_list)，选择列为正方形复选框 HTML，状态列为标签 HTML。"""
+    summary = processing_queue.get_all_tasks_summary()
+    rows = []
+    task_ids_list = []
+    for s in summary:
+        tid = s["task_id"]
+        sel = TASK_SELECT_CHECKED if tid == selected_task_id else TASK_SELECT_UNCHECKED
+        status_html = _status_tag_html(s.get("status", ""), s["status_display"])
+        rows.append([sel, s["task_id_short"], status_html, s["files_info"], s["submit_time"]])
+        task_ids_list.append(tid)
+    if not rows:
+        rows = [[TASK_SELECT_UNCHECKED, "-", '<span class="preencut-tag preencut-tag-pending">暂无任务</span>', "-", "-"]]
+    return rows, task_ids_list
+
+
+def on_task_table_select(
+    evt: gr.SelectData,
+    task_ids_list: List[str],
+) -> Tuple[List[List], List[str], str]:
+    """点击任务详情表任意单元格：选中该行，返回更新后的表格与选中任务 ID。"""
+    row_idx = evt.index[0] if evt else -1
+    selected_task_id = task_ids_list[row_idx] if (task_ids_list and 0 <= row_idx < len(task_ids_list)) else ""
+    rows, ids = get_task_detail_list(selected_task_id)
+    return rows, ids, selected_task_id
+
+
+def ask_confirm_cancel(selected_task_id: str) -> Tuple[str, str, dict, str]:
+    """点击「取消」时：若已选中则弹出确认框，否则在操作反馈中提示。返回 (cancel_feedback, confirm_pending, dialog_visible, dialog_msg)。"""
+    if not (selected_task_id or "").strip():
+        return "请先点击表格中一行选中要取消的任务。", "", gr.update(), ""
+    return "", "cancel", gr.update(visible=True), "确定要取消选中的任务吗？"
+
+
+def ask_confirm_delete(selected_task_id: str) -> Tuple[str, str, dict, str]:
+    """点击「删除」时：若已选中则弹出确认框，否则在操作反馈中提示。"""
+    if not (selected_task_id or "").strip():
+        return "请先点击表格中一行选中要删除的任务。", "", gr.update(), ""
+    return "", "delete", gr.update(visible=True), "确定要删除该条信息吗？"
+
+
+def do_confirm_action(
+    selected_task_id: str,
+    confirm_pending: str,
+) -> Tuple[List[List], List[str], str, str, str, dict]:
+    """弹框内点击「确认」：根据 confirm_pending 执行取消或删除，并关闭弹框。"""
+    rows, ids = get_task_detail_list(selected_task_id)
+    close_dialog = gr.update(visible=False)
+    if confirm_pending == "cancel":
+        ok = processing_queue.cancel_task(selected_task_id or "")
+        rows, ids = get_task_detail_list(selected_task_id)
+        return rows, ids, selected_task_id, "已取消。" if ok else "取消失败。", "", close_dialog
+    if confirm_pending == "delete":
+        ok = processing_queue.delete_task(selected_task_id or "")
+        rows, ids = get_task_detail_list(None)
+        return rows, ids, "", "已删除。" if ok else "删除失败。", "", close_dialog
+    return rows, ids, selected_task_id, "", "", close_dialog
+
+
+def close_confirm_dialog() -> Tuple[str, str, dict]:
+    """弹框内点击「关闭」：关闭弹框并清空确认状态。"""
+    return "", "", gr.update(visible=False)
+
+
+def load_selected_task_progress(
+    selected_task_id: str,
+    enable_alignment: str,
+    max_line_length: int,
+) -> Tuple:
+    """根据选中的任务 ID 加载该任务到各 Tab（分析结果、重新分析、剪辑选项、字幕文件），并返回进度文案。"""
+    tid = (selected_task_id or "").strip()
+    if not tid:
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            "请先在表格中点击一行选中要查询的任务，再点击「进度查询」。",
+            "",
+        )
+    out = check_status(tid, enable_alignment, max_line_length, tid)
+    (
+        file_download,
+        srt_download,
+        status_display,
+        result_table,
+        segment_selection,
+        asr_result,
+        progress,
+        task_detail_rows,
+        task_ids_list,
+        _timer,
+    ) = out
+    progress_lines = [
+        f"任务 ID: {tid[-8:]}",
+        f"状态: {status_display.get('status', '')}",
+        f"进度: {progress * 100:.0f}%",
+    ]
+    if status_display.get("status_info"):
+        progress_lines.append(f"当前步骤: {status_display['status_info']}")
+    progress_info = "\n".join(progress_lines)
+    return (
+        file_download,
+        srt_download,
+        status_display,
+        result_table,
+        segment_selection,
+        asr_result,
+        progress,
+        task_detail_rows,
+        task_ids_list,
+        progress_info,
+        tid,
+    )
+
+
+def _check_status_for_timer(
+    task_id: str,
+    enable_alignment: str,
+    max_line_length: int,
+    selected_task_id: Optional[str] = None,
+) -> Tuple[Dict, List, List, List, List, str, float, List[List], List[str], str, gr.Timer]:
+    """供定时器调用：在 check_status 返回值基础上增加 progress_info 供任务详情 Tab 展示。"""
+    out = check_status(task_id, enable_alignment, max_line_length, selected_task_id)
+    (
+        fd, srt_d, status_d, res_tbl, seg_sel, asr, progress,
+        task_rows, task_ids, timer,
+    ) = out
+    progress_lines = []
+    if task_id and status_d:
+        progress_lines = [
+            f"任务 ID: {task_id[-8:]}",
+            f"状态: {status_d.get('status', '')}",
+            f"进度: {progress * 100:.0f}%",
+        ]
+        if status_d.get("status_info"):
+            progress_lines.append(f"当前步骤: {status_d['status_info']}")
+    progress_info = "\n".join(progress_lines) if progress_lines else ""
+    return (fd, srt_d, status_d, res_tbl, seg_sel, asr, progress, task_rows, task_ids, progress_info, timer)
+
+
+def check_status(
+    task_id: str,
+    enable_alignment: str,
+    max_line_length: int,
+    selected_task_id: Optional[str] = None,
+) -> Tuple[Dict, List, List, List, List, str, float, List[List], List[str], gr.Timer]:
+    """检查任务状态，返回 (..., task_detail_rows, task_ids_list, timer)."""
+    task_detail_rows, task_ids_list = get_task_detail_list(selected_task_id)
     result = processing_queue.get_result(task_id)
     progress = result.get("progress", 0.0)
 
@@ -213,6 +384,8 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             clip_result,
             asr_result,
             1.0,
+            task_detail_rows,
+            task_ids_list,
             gr.Timer(active=False)
         )
 
@@ -221,20 +394,20 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             [], [],
             {"task_id": task_id,
              "status": f"错误: {result.get('error', '未知错误')}"},
-            [], [], '', progress, gr.Timer(active=False)
+            EMPTY_RESULT_TABLE, EMPTY_SEGMENT_SELECTION, '', progress, task_detail_rows, task_ids_list, gr.Timer(active=False)
         )
     elif result["status"] == "queued":
         return (
             [], [],
             {"task_id": task_id,
              "status": f"排队中, 前面还有{processing_queue.get_queue_size()}个任务"},
-            [], [], '', 0.0, gr.update()
+            EMPTY_RESULT_TABLE, EMPTY_SEGMENT_SELECTION, '', 0.0, task_detail_rows, task_ids_list, gr.update()
         )
     elif result["status"] == "cancelled":
         return (
             [], [],
             {"task_id": task_id, "status": "已取消"},
-            [], [], '', result.get("progress", 0.0), gr.Timer(active=False)
+            EMPTY_RESULT_TABLE, EMPTY_SEGMENT_SELECTION, '', result.get("progress", 0.0), task_detail_rows, task_ids_list, gr.Timer(active=False)
         )
 
     if task_id:
@@ -245,13 +418,13 @@ def check_status(task_id: str, enable_alignment: str, max_line_length: int) -> \
             {"task_id": task_id, "status": status_label,
              "status_info": result.get("status_info", ""),
              "progress": progress},
-            [], [], '', progress, gr.update()
+            EMPTY_RESULT_TABLE, EMPTY_SEGMENT_SELECTION, '', progress, task_detail_rows, task_ids_list, gr.update()
         )
     else:
         return (
             [], [],
             {"task_id": "", "status": ""},
-            [], [], '', 0.0, gr.update()
+            EMPTY_RESULT_TABLE, EMPTY_SEGMENT_SELECTION, '', 0.0, task_detail_rows, task_ids_list, gr.update()
         )
 
 
@@ -495,41 +668,35 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         return task_result, [], []
 
 
-# Tech Assistant 插件：按 https://ai.goodideaggn.com/tech-assistant 集成
-# 等 UMD 加载完成后再 init，避免刷新时脚本未就绪导致小机器人不出现
-TECH_ASSISTANT_HEAD = """
-<script src="https://ai.goodideaggn.com/tech-assistant/tech-assistant.umd.js"></script>
-<script>
-(function() {
-  var appId = "app_6aaf7312ad1d";
-  function tryInit() {
-    if (window.TechAssistant && typeof window.TechAssistant.init === "function") {
-      window.TechAssistant.init({ applicationId: appId });
-      return true;
-    }
-    return false;
-  }
-  function initWhenReady() {
-    if (tryInit()) return;
-    var attempts = 0, maxAttempts = 25;
-    var t = setInterval(function() {
-      if (tryInit() || ++attempts >= maxAttempts) clearInterval(t);
-    }, 200);
-  }
-  if (document.readyState === "complete") initWhenReady();
-  else window.addEventListener("load", initWhenReady);
-})();
-</script>
-"""
+
+
 
 
 def create_gradio_interface():
     """创建Gradio界面"""
-    with gr.Blocks(title="PreenCut", theme=gr.themes.Soft(), head=TECH_ASSISTANT_HEAD) as app:
-        gr.Markdown("# 🎬 PreenCut-AI视频剪辑助手")
+    with gr.Blocks(title="PreenCut", theme=gr.themes.Soft(primary_hue="orange"), head=get_theme_head(), css=get_theme_css()) as app:
+        gr.Markdown(
+            '<h1 class="preencut-title">'
+            '<span class="preencut-title-main">赞意AI视频剪辑助手</span>'
+            '<span class="preencut-title-sep"> — </span>'
+            '<span class="preencut-title-en">Good IDEA-AI Preencut</span>'
+            '</h1>'
+            '<p class="preencut-subtitle">真  专家  敢 求胜  利他</p>',
+            elem_id="preencut-title-block",
+        )
         gr.Markdown(
             "上传包含语音的视频/音频文件，AI将自动识别语音内容、智能分段，并允许您输入自然语言进行检索。")
 
+        # # 测试按钮：用于验证刷新页面后是否加载最新前端
+        # with gr.Row():
+        #     test_refresh_btn = gr.Button("🔄 测试按钮-刷新后可见最新", variant="secondary")
+        #     test_refresh_msg = gr.Textbox(label="测试反馈", interactive=False, visible=True)
+
+        # def on_test_click():
+        #     return "✅ 已点击，说明前端已是最新（刷新生效）"
+        # test_refresh_btn.click(on_test_click, outputs=test_refresh_msg)
+
+        ### 开始处理 ###
         with gr.Row():
             with gr.Column(scale=2):
                 file_upload = gr.Files(
@@ -567,8 +734,8 @@ def create_gradio_interface():
                     lines=2
                 )
                 with gr.Row():
-                    process_btn = gr.Button("开始处理", variant="primary")
-                    cancel_btn = gr.Button("取消处理", variant="secondary")
+                    process_btn = gr.Button("开始处理", variant="primary", elem_id="btn-start-process", elem_classes=["preencut-btn-action"])
+                    task_detail_btn = gr.Button("任务详情", variant="primary", elem_id="btn-task-detail", elem_classes=["preencut-btn-action"])
 
                 with gr.Row():
                     status_display = gr.JSON(label="处理状态")
@@ -582,78 +749,149 @@ def create_gradio_interface():
                     interactive=False,
                     visible=True,
                 )
+                # 定时器提前定义，供「进度查询」等事件启动轮询
+                timer = gr.Timer(2, active=True)
 
             with gr.Column(scale=3):
-                with gr.Tab("分析结果"):
-                    file_download = gr.File(label="下载分析结果")
-                    result_table = gr.Dataframe(
-                        headers=["文件名", "开始时间", "结束时间", "时长",
-                                 "内容摘要", "标签"],
-                        datatype=["str", "str", "str", "str", "str", "str", "str"],
-                        interactive=True,
-                        wrap=True
-                    )
+                right_tabs = gr.Tabs(selected=0)
+                with right_tabs:
+                    with gr.Tab("分析结果"):
+                        file_download = gr.File(label="下载分析结果")
+                        result_table = gr.Dataframe(
+                            headers=["文件名", "开始时间", "结束时间", "时长",
+                                     "内容摘要", "标签"],
+                            datatype=["str", "str", "str", "str", "str", "str", "str"],
+                            interactive=True,
+                            wrap=True,
+                            max_height=420,
+                            elem_id="preencut-result-table",
+                        )
 
-                with gr.Tab("重新分析"):
-                    new_prompt = gr.Textbox(
-                        label="输入新的分析提示",
-                        placeholder="例如：找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。",
-                        lines=2
-                    )
-                    reanalyze_llm_model = gr.Dropdown(
-                        choices=[model['label'] for model in LLM_MODEL_OPTIONS],
-                        value="gemini-3", label="大语言模型")
-                    reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
-                                                     step=0.1, value=1,
-                                                     label="摘要生成灵活度(temperature)")
-                    reanalyze_btn = gr.Button("重新分析", variant="secondary")
+                    with gr.Tab("任务详情", id=1):
+                        _task_rows0, _task_ids0 = get_task_detail_list()
+                        task_ids_state = gr.State(value=_task_ids0)
+                        selected_task_state = gr.State(value="")
+                        confirm_pending_state = gr.State(value="")
+                        task_detail_table = gr.Dataframe(
+                            headers=["选择", "任务ID", "状态", "文件", "提交时间"],
+                            datatype=["html", "str", "html", "str", "str"],
+                            interactive=False,
+                            wrap=True,
+                            label="点击一行选中该任务（方框内 ✓ 表示选中），再点击下方按钮执行进度查询、取消或删除。",
+                            value=_task_rows0,
+                            elem_id="preencut-task-detail-table",
+                        )
+                        with gr.Row():
+                            query_progress_btn = gr.Button("进度查询", variant="primary", elem_classes=["preencut-btn-action"])
+                            cancel_confirm_btn = gr.Button("取消", variant="secondary")
+                            delete_confirm_btn = gr.Button("删除", variant="secondary")
+                        with gr.Column(visible=False) as confirm_dialog_column:
+                            confirm_dialog_msg = gr.Markdown("", elem_id="confirm_dialog_msg")
+                            with gr.Row():
+                                confirm_ok_btn = gr.Button("确认", variant="primary", elem_classes=["preencut-btn-action"])
+                                confirm_close_btn = gr.Button("关闭", variant="secondary")
+                        progress_info_display = gr.Textbox(
+                            label="选中任务进度",
+                            lines=6,
+                            interactive=False,
+                            placeholder="先在表格中点击一行选中任务，再点击「进度查询」查看进度并加载到分析结果/剪辑选项/字幕文件等 Tab。",
+                        )
+                        cancel_feedback = gr.Textbox(
+                            label="操作反馈",
+                            interactive=False,
+                            visible=True,
+                        )
+                        task_detail_table.select(
+                            on_task_table_select,
+                            inputs=[task_ids_state],
+                            outputs=[task_detail_table, task_ids_state, selected_task_state],
+                        )
+                        cancel_confirm_btn.click(
+                            ask_confirm_cancel,
+                            inputs=[selected_task_state],
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
+                            queue=False,
+                        )
+                        delete_confirm_btn.click(
+                            ask_confirm_delete,
+                            inputs=[selected_task_state],
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column, confirm_dialog_msg],
+                            queue=False,
+                        )
+                        # 弹框内「确认」：根据当前是取消还是删除执行对应操作并关闭弹框
+                        confirm_ok_btn.click(
+                            do_confirm_action,
+                            inputs=[selected_task_state, confirm_pending_state],
+                            outputs=[task_detail_table, task_ids_state, selected_task_state, cancel_feedback, confirm_pending_state, confirm_dialog_column],
+                        )
+                        confirm_close_btn.click(
+                            close_confirm_dialog,
+                            inputs=None,
+                            outputs=[cancel_feedback, confirm_pending_state, confirm_dialog_column],
+                            queue=False,
+                        )
 
-                with gr.Tab("剪辑选项"):
-                    segment_selection = gr.Dataframe(
-                        headers=["选择", "文件名", "开始时间", "结束时间",
-                                 "时长",
-                                 "内容摘要", "标签"],
-                        datatype='html',
-                        interactive=False,
-                        wrap=True,
-                        type="array",
-                        label="选择要保留的片段"
-                    )
-                    with gr.Row():
-                        select_all_btn = gr.Button("全选", variant="secondary")
-                        deselect_all_btn = gr.Button("取消全选", variant="secondary")
-                    segment_selection.select(select_clip,
-                                             inputs=segment_selection,
-                                             outputs=segment_selection)
-                    select_all_btn.click(
-                        select_all_segments,
-                        inputs=[segment_selection],
-                        outputs=segment_selection
-                    )
-                    deselect_all_btn.click(
-                        deselect_all_segments,
-                        inputs=[segment_selection],
-                        outputs=segment_selection
-                    )
-                    # 添加下载模式选择
-                    download_mode = gr.Radio(
-                        choices=["打包成zip文件", "合并成一个文件"],
-                        label="选择多个文件时的处理方式",
-                        value="打包成zip文件"
-                    )
-                    clip_btn = gr.Button("剪辑", variant="primary")
-                    download_output = gr.File(label="下载剪辑结果")
+                    with gr.Tab("重新分析"):
+                        new_prompt = gr.Textbox(
+                            label="输入新的分析提示",
+                            placeholder="例如：找出所有关于“合生元”及“合生元派星”的品牌露出和口播片段。必须包含关键词提及的前后完整语境、产品功能深度讲解、成分描述以及画面展示部分。",
+                            lines=2
+                        )
+                        reanalyze_llm_model = gr.Dropdown(
+                            choices=[model['label'] for model in LLM_MODEL_OPTIONS],
+                            value="gemini-3", label="大语言模型")
+                        reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
+                                                         step=0.1, value=1,
+                                                         label="摘要生成灵活度(temperature)")
+                        reanalyze_btn = gr.Button("重新分析", variant="secondary")
 
-                with gr.Tab("字幕文件"):
-                    srt_download = gr.File(label='下载txt/srt文件')
-                    asr_result = gr.Text(label="语音识别结果", lines=20,
-                                         interactive=True)
+                    with gr.Tab("剪辑选项"):
+                        segment_selection = gr.Dataframe(
+                            headers=["选择", "文件名", "开始时间", "结束时间",
+                                     "时长",
+                                     "内容摘要", "标签"],
+                            datatype='html',
+                            interactive=False,
+                            wrap=True,
+                            type="array",
+                            label="选择要保留的片段",
+                            max_height=420,
+                            elem_id="preencut-segment-table",
+                        )
+                        with gr.Row():
+                            select_all_btn = gr.Button("全选", variant="secondary")
+                            deselect_all_btn = gr.Button("取消全选", variant="secondary")
+                        segment_selection.select(select_clip,
+                                                 inputs=segment_selection,
+                                                 outputs=segment_selection)
+                        select_all_btn.click(
+                            select_all_segments,
+                            inputs=[segment_selection],
+                            outputs=segment_selection
+                        )
+                        deselect_all_btn.click(
+                            deselect_all_segments,
+                            inputs=[segment_selection],
+                            outputs=segment_selection
+                        )
+                        # 添加下载模式选择
+                        download_mode = gr.Radio(
+                            choices=["打包成zip文件", "合并成一个文件"],
+                            label="选择多个文件时的处理方式",
+                            value="打包成zip文件"
+                        )
+                        clip_btn = gr.Button("剪辑", variant="primary", elem_classes=["preencut-btn-action"])
+                        download_output = gr.File(label="下载剪辑结果")
 
-        # 定时器，用于轮询状态
-        timer = gr.Timer(2, active=False)
-        timer.tick(
-            check_status,
-            inputs=[task_id, alignment, max_line_length],
+                    with gr.Tab("字幕文件"):
+                        srt_download = gr.File(label='下载txt/srt文件')
+                        asr_result = gr.Text(label="语音识别结果", lines=20,
+                                             interactive=True)
+
+        # 进度查询：加载选中任务到各 Tab（需在 srt_download、asr_result 等定义之后绑定）
+        query_progress_btn.click(
+            load_selected_task_progress,
+            inputs=[selected_task_state, alignment, max_line_length],
             outputs=[
                 file_download,
                 srt_download,
@@ -662,6 +900,33 @@ def create_gradio_interface():
                 segment_selection,
                 asr_result,
                 progress_bar,
+                task_detail_table,
+                task_ids_state,
+                progress_info_display,
+                task_id,
+            ],
+        ).then(
+            lambda: gr.Timer(active=True),
+            inputs=None,
+            outputs=timer,
+            show_progress="hidden",
+        )
+
+        # 定时器轮询当前任务状态（含任务详情 Tab 的进度文案与选中行）
+        timer.tick(
+            _check_status_for_timer,
+            inputs=[task_id, alignment, max_line_length, selected_task_state],
+            outputs=[
+                file_download,
+                srt_download,
+                status_display,
+                result_table,
+                segment_selection,
+                asr_result,
+                progress_bar,
+                task_detail_table,
+                task_ids_state,
+                progress_info_display,
                 timer,
             ],
         )
@@ -671,7 +936,7 @@ def create_gradio_interface():
             process_files,
             inputs=[file_upload, llm_model, temperature, prompt_input,
                     model_size, alignment, max_line_length],
-            outputs=[task_id, status_display, progress_bar],
+            outputs=[task_id, status_display, progress_bar, file_upload],
         ).then(
             lambda: gr.Timer(active=True),
             inputs=None,
@@ -679,11 +944,15 @@ def create_gradio_interface():
             show_progress="hidden"
         )
 
-        # queue=False：取消需立即执行，不能等长任务跑完才轮到
-        cancel_btn.click(
-            cancel_processing,
-            inputs=[status_display],
-            outputs=[status_display],
+        # 任务详情按钮：与右侧「任务详情」Tab 绑定，点击后右侧切换到该 Tab 并展示（选中当前任务行）
+        def go_to_task_detail_tab_and_select_current(current_task_id):
+            tid = (current_task_id or "").strip() if isinstance(current_task_id, str) else ""
+            rows, ids = get_task_detail_list(selected_task_id=tid if tid else None)
+            return gr.update(selected=1), rows, ids, tid
+        task_detail_btn.click(
+            go_to_task_detail_tab_and_select_current,
+            inputs=[task_id],
+            outputs=[right_tabs, task_detail_table, task_ids_state, selected_task_state],
             queue=False,
         )
 

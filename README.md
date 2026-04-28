@@ -19,6 +19,10 @@ language queries.
 - **SRT Export**: Generate subtitles with accurate timestamps and custom line length
 - **Batch Processing**: find a specific topic across multiple files
 - **Re-analysis**: Experiment with different prompts without reprocessing audio
+- **Task List & Status**: Task detail table shows all tasks (short ID, status, files, submit time); click a row to select, then use "Progress" to load that task into Analysis / Re-analyze / Cut / SRT tabs
+- **Cancel & Delete Tasks**: Cancel queued tasks (takes effect immediately) or running tasks (stops after current step); delete task records from the list, with confirmation dialogs
+- **Unified Theme**: Warm cream background, orange accent buttons, status tags (processing / completed / queued / cancelled / error), consistent checkbox styling in tables
+
 
 ## ⚙️ Installation
 
@@ -187,6 +191,13 @@ python3 -m uvicorn main:app --port 7860 --reload
   - Adjust WHISPER_BATCH_SIZE based on available VRAM when using whisperx
   - Use smaller model sizes for CPU-only systems
   - set ENABLE_ALIGNMENT=False to improve processing speed if you don't need accurate subtitle timestamps
+
+## 📋 Recent Updates
+
+- **Task management**: Task detail tab with table (short ID, status, files, submit time); select a row then "Progress" to load that task into other tabs. Cancel (queued → immediate, processing → after current step) and delete task records with confirmation.
+- **Short task ID**: Query or operate tasks by last 8 characters of task ID.
+- **UI/UX**: Unified warm theme (cream background, orange buttons, status tags); checkbox styling in tables; empty result placeholders to avoid Gradio errors.
+- **LAN access**: Support for `host=0.0.0.0` and custom port; Windows firewall script `scripts/allow_port_7861_firewall.ps1` for opening the port.
 
 ## 📜 License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

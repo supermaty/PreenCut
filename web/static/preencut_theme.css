@@ -1,0 +1,540 @@
+/* ui-ux-pro-max：汉字微软雅黑，按钮统一浅橘→悬浮更深→点击深橘并保持 */
+:root {
+  --preencut-cta: #C2410C;
+  --preencut-cta-hover: #EA580C;
+  --preencut-cta-active: #9A3412;
+  --preencut-btn-light: #FFCCB3;
+  --preencut-btn-hover: #FF9F7A;
+  --preencut-cream: #FFFBEB;
+  --preencut-cream-light: #FFF7ED;
+  --preencut-warm-neutral: #FEF3C7;
+  --preencut-off-white: #FAFAF9;
+  --preencut-text: #000000;
+  --preencut-text-muted: #000000;
+  --preencut-border: #FDE68A;
+  --preencut-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* 副标题与导航按钮统一：橘红渐变（与 AGENTS 禁止纯平背景一致） */
+  --preencut-gradient-bar: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%);
+  --preencut-font-hans: "Microsoft YaHei", "微软雅黑", "Microsoft YaHei UI", sans-serif;
+  --preencut-font-en-display: "Playfair Display", Georgia, serif;
+  --preencut-font-en-sans: "Lato", "Open Sans", sans-serif;
+  --preencut-font: var(--preencut-font-en-sans), var(--preencut-font-hans);
+}
+/* 主标题：赞意 + Good IDEA，艺术感与灵动（与暖色界面协调） */
+.gradio-container .gr-markdown .preencut-title,
+.gradio-container .gr-markdown h1.preencut-title,
+h1.preencut-title {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: baseline !important;
+  gap: 0.25em 0.4em !important;
+  margin: 0 0 0.35em 0 !important;
+  padding-bottom: 0.5em !important;
+  border-bottom: 2px solid transparent !important;
+  border-image: linear-gradient(90deg, transparent 0%, rgba(194,65,12,0.15) 20%, rgba(234,88,12,0.4) 50%, rgba(194,65,12,0.15) 80%, transparent 100%) 1 !important;
+  font-family: "Righteous", "Playfair Display", var(--preencut-font-hans) !important;
+}
+.preencut-title-main {
+  font-weight: 700 !important;
+  font-size: 28px !important;
+  letter-spacing: 0.03em !important;
+  background: linear-gradient(105deg, #9A3412 0%, #C2410C 25%, #EA580C 55%, #FF9F7A 80%, #FFCCB3 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  color: transparent !important;
+  text-shadow: 0 0 40px rgba(194,65,12,0.08) !important;
+}
+.preencut-title-sep {
+  font-weight: 300 !important;
+  font-size: 20px !important;
+  color: rgba(154,52,18,0.6) !important;
+  letter-spacing: 0.15em !important;
+}
+.preencut-title-en {
+  font-family: "Playfair Display", Georgia, var(--preencut-font-hans) !important;
+  font-weight: 600 !important;
+  font-size: 22px !important;
+  letter-spacing: 0.12em !important;
+  background: linear-gradient(90deg, #B45309 0%, #C2410C 35%, #EA580C 70%, #FF9F7A 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+/* 打字机光标（英文逐字输出时显示） */
+.preencut-title-en-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--preencut-cta);
+  animation: preencut-cursor-blink 0.8s step-end infinite;
+}
+@keyframes preencut-cursor-blink {
+  50% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preencut-title-en-cursor { animation: none; }
+}
+/* 主标题下方副标题：真 专家 敢 求胜 利他，红底白字加粗+轻微阴影（参考品牌图） */
+.preencut-subtitle {
+  margin: 0.75em 0 0 0 !important;
+  padding: 0.5em 1.25em !important;
+  display: block !important;
+  text-align: center !important;
+  font-family: var(--preencut-font-en-sans), var(--preencut-font-hans) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.45em !important;
+  color: #FFFFFF !important;
+  background: var(--preencut-gradient-bar) !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 6px !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+}
+/* 全局：奶油背景 + 主内容区内边距 */
+.gradio-container {
+  background: var(--preencut-cream) !important;
+  font-family: var(--preencut-font) !important;
+  color: #000000 !important;
+  padding: 24px 32px 32px !important;
+  max-width: 100% !important;
+}
+.gr-block, .gr-box, .block, [class*="block"] {
+  background: var(--preencut-off-white) !important;
+  box-shadow: var(--preencut-shadow) !important;
+  border-radius: 10px !important;
+}
+/* 标题区去掉浅色块背景，与整体米黄大背景统一（用固定 id 确保命中 Gradio 实际 DOM） */
+#preencut-title-block,
+.gradio-container div:has(#preencut-title-block) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.gradio-container .gr-markdown:has(h1.preencut-title),
+.gradio-container .gr-markdown:has(.preencut-subtitle),
+.gradio-container .gr-form:has(h1.preencut-title),
+.gradio-container .gr-form:has(.preencut-subtitle),
+.gradio-container .gr-block:has(h1.preencut-title),
+.gradio-container .gr-block:has(.preencut-subtitle),
+.gradio-container .gr-box:has(h1.preencut-title),
+.gradio-container .gr-box:has(.preencut-subtitle) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.gradio-container h1.preencut-title,
+.gradio-container .gr-markdown:has(h1.preencut-title) {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+/* 副标题单独红底白字（与标题区透明分离），必须保留橘红渐变背景 */
+.gradio-container p.preencut-subtitle,
+.gradio-container .gr-markdown p.preencut-subtitle {
+  background: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%) !important;
+  background-color: transparent !important;
+  color: #FFFFFF !important;
+  margin: 0.75em 0 0 0 !important;
+  padding: 0.5em 1.25em !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.45em !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+  border-radius: 6px !important;
+  border: none !important;
+}
+/* 布局：行/列间距统一（ui-ux-pro-max） */
+.gradio-container .gr-form, .gradio-container .gr-row, .gradio-container .gr-block {
+  gap: 14px 18px !important;
+}
+.gradio-container .gr-row { align-items: flex-start !important; margin-bottom: 8px !important; }
+.gradio-container .gr-column { gap: 12px !important; }
+.gr-form, .gr-input, .gr-padded { font-family: var(--preencut-font) !important; color: #000000 !important; }
+
+/* 全站按钮统一：默认浅橘+黑字 → 悬停深橘+白字 → 点击后保持深橘+白字（ui-ux-pro-max） */
+.gradio-container button.gr-button, .gradio-container .gr-button {
+  background: var(--preencut-btn-light) !important; background-color: var(--preencut-btn-light) !important;
+  color: #000000 !important;
+  transition: background-color 0.2s ease, color 0.2s ease !important;
+  cursor: pointer !important;
+  border: none !important; border-radius: 8px !important;
+}
+.gradio-container button.gr-button:hover, .gradio-container .gr-button:hover {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+.gradio-container button.gr-button:active, .gradio-container .gr-button:active {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+/* 点击后保持深橘+白字（JS 添加 .preencut-btn-stayed） */
+.gradio-container button.gr-button.preencut-btn-stayed,
+.gradio-container button.gr-button.preencut-btn-stayed:hover,
+.gradio-container button.gr-button.preencut-btn-stayed:active {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+/* 按钮焦点环 - 与输入框同套暖色，便于键盘与无障碍（a11y） */
+.gradio-container button.gr-button:focus,
+.gradio-container button.gr-button:focus-visible,
+.gradio-container .gr-button:focus,
+.gradio-container .gr-button:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--preencut-cream-light), 0 0 0 4px rgba(194, 65, 12, 0.25) !important;
+}
+
+/* 标题：英文粗衬线 + 中文微软雅黑，正文/标签：英文 Lato + 中文微软雅黑 */
+h1, .gr-markdown h1 { font-family: var(--preencut-font-en-display), var(--preencut-font-hans) !important; font-weight: 700 !important; font-size: 24px !important; color: #000000 !important; }
+.gr-markdown p, .gr-label, label { font-family: var(--preencut-font) !important; font-size: 14px !important; color: #000000 !important; line-height: 1.5 !important; }
+.gr-markdown { font-family: var(--preencut-font) !important; color: #000000 !important; }
+
+/* 开始处理 / 任务详情 / 进度查询 / 取消 / 删除 / 重新分析 / 全选 / 取消全选 / 剪辑：统一风格（继承全站按钮） */
+.gradio-container .preencut-btn-action button,
+.gradio-container .preencut-btn-action .gr-button,
+#btn-start-process button, #btn-start-process .gr-button,
+#btn-task-detail button, #btn-task-detail .gr-button {
+  font-family: var(--preencut-font) !important; font-weight: 700 !important; font-size: 16px !important;
+  padding: 10px 20px !important; margin: 0 8px 0 0 !important; min-height: 44px !important;
+}
+.gradio-container .preencut-btn-action:first-child button { margin-left: 0 !important; }
+
+/* 开始处理、任务详情：背景与副标题一致（橘红渐变 + 白字），用 background-image 与更高优先级压过全局 .gr-button */
+.gradio-container #btn-start-process button,
+.gradio-container #btn-start-process .gr-button,
+.gradio-container #btn-task-detail button,
+.gradio-container #btn-task-detail .gr-button {
+  background: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%) !important;
+  background-color: transparent !important;
+  color: #FFFFFF !important;
+  border-radius: 10px !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 2px 4px rgba(194,65,12,0.15), 0 1px 3px rgba(0,0,0,0.08) !important;
+  transition: opacity 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease !important;
+}
+.gradio-container #btn-start-process button:hover,
+.gradio-container #btn-start-process .gr-button:hover,
+.gradio-container #btn-task-detail button:hover,
+.gradio-container #btn-task-detail .gr-button:hover {
+  background: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%) !important;
+  background-color: transparent !important;
+  color: #FFFFFF !important;
+  opacity: 0.94 !important;
+  box-shadow: 0 4px 12px rgba(154,52,18,0.35) !important;
+}
+.gradio-container #btn-start-process button:active,
+.gradio-container #btn-start-process .gr-button:active,
+.gradio-container #btn-task-detail button:active,
+.gradio-container #btn-task-detail .gr-button:active {
+  transform: scale(0.97) !important;
+  box-shadow: 0 1px 2px rgba(194,65,12,0.25) !important;
+}
+.gradio-container #btn-start-process button.preencut-btn-stayed,
+.gradio-container #btn-start-process .gr-button.preencut-btn-stayed,
+.gradio-container #btn-task-detail button.preencut-btn-stayed,
+.gradio-container #btn-task-detail .gr-button.preencut-btn-stayed,
+.gradio-container #btn-start-process button.preencut-btn-stayed:hover,
+.gradio-container #btn-start-process .gr-button.preencut-btn-stayed:hover,
+.gradio-container #btn-task-detail button.preencut-btn-stayed:hover,
+.gradio-container #btn-task-detail .gr-button.preencut-btn-stayed:hover,
+.gradio-container #btn-start-process button.preencut-btn-stayed:active,
+.gradio-container #btn-start-process .gr-button.preencut-btn-stayed:active,
+.gradio-container #btn-task-detail button.preencut-btn-stayed:active,
+.gradio-container #btn-task-detail .gr-button.preencut-btn-stayed:active {
+  background: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%) !important;
+  background-color: transparent !important;
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+  box-shadow: 0 4px 12px rgba(154,52,18,0.35) !important;
+  transform: none !important;
+}
+/* 开始处理/任务详情 获得焦点时保留暖色焦点环 */
+.gradio-container #btn-start-process button:focus,
+.gradio-container #btn-start-process button:focus-visible,
+.gradio-container #btn-start-process .gr-button:focus,
+.gradio-container #btn-start-process .gr-button:focus-visible,
+.gradio-container #btn-task-detail button:focus,
+.gradio-container #btn-task-detail button:focus-visible,
+.gradio-container #btn-task-detail .gr-button:focus,
+.gradio-container #btn-task-detail .gr-button:focus-visible {
+  outline: none !important;
+  box-shadow: 0 2px 4px rgba(194,65,12,0.08), 0 0 0 2px var(--preencut-cream-light), 0 0 0 4px rgba(194, 65, 12, 0.25) !important;
+}
+.gradio-container #btn-start-process button:hover:focus,
+.gradio-container #btn-start-process button:hover:focus-visible,
+.gradio-container #btn-start-process .gr-button:hover:focus,
+.gradio-container #btn-start-process .gr-button:hover:focus-visible,
+.gradio-container #btn-task-detail button:hover:focus,
+.gradio-container #btn-task-detail button:hover:focus-visible,
+.gradio-container #btn-task-detail .gr-button:hover:focus,
+.gradio-container #btn-task-detail .gr-button:hover:focus-visible {
+  box-shadow: 0 4px 12px rgba(154,52,18,0.35), 0 0 0 2px var(--preencut-cream-light), 0 0 0 4px rgba(194, 65, 12, 0.25) !important;
+}
+
+/* primary / secondary 与全站统一：默认浅橘黑字，悬停深橘白字，点击保持深橘白字 */
+.gradio-container button.primary, .gradio-container .gr-button.primary,
+.gradio-container [class*="primary"] button, .gradio-container .gr-button[class*="primary"] {
+  background: var(--preencut-btn-light) !important; background-color: var(--preencut-btn-light) !important;
+  color: #000000 !important; border: none !important; border-radius: 8px !important;
+}
+.gradio-container button.primary:hover, .gradio-container .gr-button.primary:hover,
+.gradio-container [class*="primary"] button:hover {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+.gradio-container button.primary:active, .gradio-container .gr-button.primary:active {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+
+button.gr-button.secondary, .gr-button.secondary {
+  background: var(--preencut-btn-light) !important; background-color: var(--preencut-btn-light) !important;
+  color: #000000 !important;
+  font-family: var(--preencut-font) !important; font-size: 14px !important;
+  border-radius: 8px !important; padding: 8px 16px !important; margin: 0 8px 0 0 !important;
+  border: none !important;
+}
+button.gr-button.secondary:hover, .gr-button.secondary:hover {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+button.gr-button.secondary:active, .gr-button.secondary:active {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #FFFFFF !important;
+}
+
+/* 标签 Tag - 暖色系 */
+.preencut-tag { border-radius: 12px !important; font-family: var(--preencut-font) !important; font-size: 12px !important; padding: 6px 12px !important; display: inline-block !important; }
+.preencut-tag-processing { background: var(--preencut-warm-neutral) !important; color: var(--preencut-cta) !important; }
+.preencut-tag-done { background: var(--preencut-cta) !important; color: #FFFFFF !important; }
+.preencut-tag-pending { background: var(--preencut-warm-neutral) !important; color: var(--preencut-text-muted) !important; }
+.preencut-tag-error { background: #FEE2E2 !important; color: #B91C1C !important; }
+
+/* Tabs - 未选中=奶油，悬浮=暖浅，选中=与副标题一致的橘红渐变 */
+.gr-tabs .tab-nav, .tabs-nav, [class*="tabs"] button {
+  background: var(--preencut-warm-neutral) !important; background-color: var(--preencut-warm-neutral) !important; color: var(--preencut-text) !important;
+  font-family: var(--preencut-font) !important; font-size: 14px !important;
+  border: none !important; border-radius: 8px !important;
+  transition: background 0.2s ease, background-color 0.2s ease, color 0.2s ease !important;
+}
+.gradio-container .gr-tabs .tab-nav button.selected,
+.gradio-container .tabs-nav button.selected,
+.gradio-container [class*="tabs"] button.selected {
+  background: linear-gradient(90deg, #EA580C 0%, #E60000 50%, #C2410C 100%) !important;
+  background-color: transparent !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+}
+.gr-tabs .tab-nav button:not(.selected):hover, [class*="tabs"] button:not(.selected):hover {
+  background: var(--preencut-cream-light) !important; background-color: var(--preencut-cream-light) !important; color: var(--preencut-cta) !important;
+}
+
+/* 表格：艺术化边框与阴影，无字背景、字居中（ui-ux-pro-max） */
+#preencut-result-table *, #preencut-task-detail-table *, #preencut-segment-table * {
+  box-shadow: none !important;
+}
+/* 表格外层容器：艺术阴影 + 圆角边框 */
+#preencut-task-detail-table,
+.gradio-container .gr-dataframe, .gradio-container .gr-dataframe .gr-box,
+.gradio-container .gr-dataframe .gr-block, .gradio-container [class*="dataframe"] {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05), 0 10px 24px -5px rgba(194,65,12,0.06) !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+}
+/* 分析结果、剪辑选项：参考图—固定高度，右侧垂直+底部横向滚动条，表头固定仅数据行滚动 */
+#preencut-result-table,
+#preencut-segment-table {
+  max-height: 420px !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05), 0 10px 24px -5px rgba(194,65,12,0.06) !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+}
+/* 表头固定：滚动时表头吸顶，仅数据行随滚动条/滚轮移动 */
+#preencut-result-table thead th,
+#preencut-segment-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  background: rgba(254,243,199,0.98) !important;
+  box-shadow: 0 1px 0 0 rgba(194,65,12,0.2) !important;
+}
+/* 表格本体：背景 + 圆角 + 内边框（分析/剪辑表允许内容撑开以出现横向滚动） */
+#preencut-result-table table, #preencut-task-detail-table table, #preencut-segment-table table,
+.gradio-container .gr-dataframe table, .gradio-container table {
+  width: 100% !important;
+  background: var(--preencut-off-white) !important;
+  border: 1px solid rgba(0,0,0,0.09) !important;
+  border-radius: 10px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.6) !important;
+}
+#preencut-task-detail-table table {
+  overflow: hidden !important;
+}
+/* 单元格内文字/标签无背景、无阴影；排除复选框 .preencut-cell-checkbox 以保留选中态 */
+.gr-dataframe th *:not(.preencut-cell-checkbox), .gr-dataframe th span:not(.preencut-cell-checkbox),
+.dataframe th *:not(.preencut-cell-checkbox), .dataframe th span:not(.preencut-cell-checkbox),
+.gr-dataframe td *:not(.preencut-cell-checkbox), .gr-dataframe td span:not(.preencut-cell-checkbox),
+.dataframe td *:not(.preencut-cell-checkbox), .dataframe td span:not(.preencut-cell-checkbox),
+#preencut-result-table th *:not(.preencut-cell-checkbox), #preencut-result-table td *:not(.preencut-cell-checkbox),
+#preencut-task-detail-table th *:not(.preencut-cell-checkbox), #preencut-task-detail-table td *:not(.preencut-cell-checkbox),
+#preencut-segment-table th *:not(.preencut-cell-checkbox), #preencut-segment-table td *:not(.preencut-cell-checkbox) {
+  background: transparent !important; background-color: transparent !important;
+  box-shadow: none !important;
+}
+/* 表格内复选框：保留边框与阴影规则，选中态用 class 强制深橘色 + 白勾 */
+.gradio-container .preencut-cell-checkbox { box-shadow: none !important; }
+.gradio-container .preencut-cell-checkbox.preencut-checkbox-checked {
+  background: var(--preencut-cta-active) !important; background-color: var(--preencut-cta-active) !important;
+  color: #fff !important;
+}
+/* 选中行高亮（Gradio 可能为选中行加 .selected 或 aria-selected） */
+.gradio-container .gr-dataframe tbody tr.selected td,
+.gradio-container .gr-dataframe tbody tr[aria-selected="true"] td,
+.gradio-container .gr-dataframe tbody tr.gr-selected td {
+  background: rgba(194,65,12,0.08) !important; background-color: rgba(194,65,12,0.08) !important;
+}
+/* 表头：细边框 + 轻微暖色底（艺术感） */
+.gr-dataframe th, .dataframe th, table.gr-table thead th,
+#preencut-result-table th, #preencut-task-detail-table th, #preencut-segment-table th {
+  color: #1a1a1a !important;
+  font-family: var(--preencut-font) !important; font-weight: 700 !important; font-size: 14px !important;
+  padding: 14px 16px !important;
+  text-align: center !important; vertical-align: middle !important;
+  background: rgba(254,243,199,0.5) !important;
+  border-bottom: 2px solid rgba(194,65,12,0.2) !important;
+  border-right: 1px solid rgba(0,0,0,0.06) !important;
+}
+.gr-dataframe th:last-child, .dataframe th:last-child, #preencut-result-table th:last-child, #preencut-task-detail-table th:last-child, #preencut-segment-table th:last-child {
+  border-right: none !important;
+}
+/* 数据单元格：细边框、居中 */
+.gr-dataframe td, .dataframe td, table.gr-table tbody td,
+#preencut-result-table td, #preencut-task-detail-table td, #preencut-segment-table td {
+  color: #1a1a1a !important; font-family: var(--preencut-font) !important; padding: 12px 16px !important;
+  background: transparent !important; background-color: transparent !important;
+  text-align: center !important; vertical-align: middle !important;
+  border-bottom: 1px solid rgba(0,0,0,0.06) !important;
+  border-right: 1px solid rgba(0,0,0,0.05) !important;
+}
+.gr-dataframe td:last-child, .dataframe td:last-child, #preencut-result-table td:last-child, #preencut-task-detail-table td:last-child, #preencut-segment-table td:last-child {
+  border-right: none !important;
+}
+.gr-dataframe tbody tr:last-child td, .dataframe tbody tr:last-child td { border-bottom: none !important; }
+.gr-dataframe tbody tr:nth-child(even), .dataframe tbody tr:nth-child(even),
+.gr-dataframe tbody tr:nth-child(odd), .dataframe tbody tr:nth-child(odd) {
+  background: transparent !important; background-color: transparent !important;
+}
+.gr-dataframe .preencut-tag, .dataframe .preencut-tag {
+  background: transparent !important; background-color: transparent !important;
+}
+
+/* 区块间距 + 输入框微软雅黑（ui-ux-pro-max 一致间距） */
+.gr-input, .gr-textarea, input, textarea {
+  font-family: var(--preencut-font) !important; color: #000000 !important;
+  border-radius: 8px !important; border: 1px solid rgba(0,0,0,0.12) !important;
+}
+.gr-form, .gr-padded { padding: 12px 20px !important; }
+.gr-block + .gr-block { margin: 20px 0 !important; }
+.gradio-container .gr-group, .gradio-container .gr-accordion { border-radius: 8px !important; }
+
+/* 焦点/选中 - 暖色 + a11y */
+.gr-input:focus, .gr-textarea:focus, input:focus, textarea:focus,
+.gr-dropdown:focus-within, .gr-number:focus-within,
+[class*="input"]:focus, [class*="textarea"]:focus {
+  border-color: var(--preencut-cta) !important; box-shadow: 0 0 0 2px var(--preencut-cream-light), 0 0 0 4px rgba(194, 65, 12, 0.25) !important;
+  outline: none !important;
+}
+.gr-radio input:checked + span, .gr-checkbox input:checked + span { color: var(--preencut-cta) !important; }
+.gr-radio .selected, .gr-radio [data-selected="true"], .gr-radio label.selected,
+.gradio-container .gr-radio button.primary, .gradio-container .gr-radio .wrap.selected {
+  background: var(--preencut-cta) !important; background-color: var(--preencut-cta) !important; color: #FFFFFF !important; border-color: var(--preencut-cta) !important;
+}
+.gr-slider input[type="range"]::-webkit-slider-thumb { background: var(--preencut-cta) !important; }
+.gr-slider input[type="range"]::-moz-range-thumb { background: var(--preencut-cta) !important; }
+.gr-slider .gr-progress, .gr-slider [class*="progress"], .gr-slider input[type="range"]::-webkit-slider-runnable-track { background: var(--preencut-cta) !important; }
+
+/* 统一覆盖所有蓝色相关组件 → 暖色 CTA（ui-ux-pro-max 配色统一） */
+.gradio-container a, .gradio-container a:link, .gradio-container a:visited,
+.gr-markdown a, .gr-markdown a:link, .gr-markdown a:visited {
+  color: var(--preencut-cta) !important;
+}
+.gradio-container a:hover { color: var(--preencut-cta-hover) !important; }
+.gradio-container a:active { color: var(--preencut-cta-active) !important; }
+/* 文件上传区域、下拉框等可能带主题蓝的边框/背景 */
+.gradio-container .gr-file, .gradio-container .gr-form, .gradio-container [class*="input"] {
+  border-color: var(--preencut-border) !important;
+}
+.gradio-container .gr-file:hover, .gradio-container [class*="upload"]:hover {
+  border-color: var(--preencut-cta) !important; background: var(--preencut-cream-light) !important;
+}
+/* 上传区「温暖入口」：极淡暖色背景 + 暖色边框（参考代表性案例配色 #F7F2ED / #DDAA88） */
+.gradio-container .gr-file,
+.gradio-container .gr-file .gr-box,
+.gradio-container .gr-file [class*="upload"],
+.gradio-container .gr-file [class*="drop"] {
+  background-color: #F7F2ED !important;
+  border-color: #DDAA88 !important;
+  border-radius: 10px !important;
+}
+.gradio-container .gr-file:hover,
+.gradio-container .gr-file:hover .gr-box,
+.gradio-container .gr-file:hover [class*="upload"],
+.gradio-container .gr-file:hover [class*="drop"] {
+  background-color: #FAF6F2 !important;
+  border-color: #C2410C !important;
+}
+/* 进度条、加载条（Gradio 可能用蓝） */
+.gradio-container [class*="progress"], .gradio-container .gr-progress,
+.gradio-container progress, .gradio-container [role="progressbar"] {
+  background: var(--preencut-warm-neutral) !important;
+  accent-color: var(--preencut-cta) !important;
+}
+.gradio-container [class*="progress"]::-webkit-progress-value,
+.gradio-container .gr-progress-bar, .gradio-container [class*="progress-bar"] {
+  background: var(--preencut-cta) !important; background-color: var(--preencut-cta) !important;
+}
+/* Accordion 展开头、选中态（避免主题蓝） */
+.gradio-container .gr-accordion, .gradio-container [class*="accordion"] button,
+.gradio-container details summary {
+  color: var(--preencut-text) !important;
+}
+.gradio-container .gr-accordion.open, .gradio-container [class*="accordion"] [open] summary,
+.gradio-container details[open] summary {
+  border-color: var(--preencut-border) !important;
+  background: var(--preencut-cream-light) !important; color: var(--preencut-cta) !important;
+}
+/* 下拉选项高亮、列表选中 */
+.gradio-container [class*="dropdown"] [aria-selected="true"],
+.gradio-container [class*="option"]:hover, .gradio-container [role="option"]:hover {
+  background: var(--preencut-cream-light) !important; color: var(--preencut-cta) !important;
+}
+/* 强制覆盖 Gradio 主题可能注入的 primary 色 */
+.gradio-container [data-primary], .gradio-container .primary,
+.gradio-container .gr-button.primary, .gradio-container button.primary {
+  background-color: var(--preencut-cta) !important;
+}
+.gradio-container .gr-padded .gr-box, .gradio-container .contain {
+  --tw-ring-color: var(--preencut-cta) !important;
+}
+
+/* 尊重「减少动效」：关闭或减弱 transition（a11y） */
+@media (prefers-reduced-motion: reduce) {
+  .gradio-container *,
+  .gradio-container *::before,
+  .gradio-container *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

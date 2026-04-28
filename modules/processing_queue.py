@@ -148,7 +148,7 @@ class ProcessingQueue:
         self.queue.put(task_id)
 
     def cancel_task(self, task_id: str) -> bool:
-        """请求取消任务（排队中或处理中）。返回是否找到并已标记取消。"""
+        """请求取消任务（排队中或处理中）。返回是否找到并已标记取消。排队任务会立即显示为已取消。"""
         tid = (task_id or "").strip()
         if not tid:
             print("[取消] cancel_task: task_id 为空", flush=True)
@@ -158,11 +158,42 @@ class ProcessingQueue:
             status = task_result.get("status") if task_result else None
             if task_result and status in ("queued", "processing"):
                 task_result["cancel_requested"] = True
-                task_result["status_info"] = "已请求取消，当前步骤（如语音识别/对齐）完成后将停止"
+                task_result["status_info"] = "用户取消"
+                # 排队中的任务立即置为已取消，界面可马上显示「已取消」；worker 取到时会跳过执行
+                if status == "queued":
+                    task_result["status"] = "cancelled"
+                else:
+                    task_result["status_info"] = "已请求取消，当前步骤（如语音识别/对齐）完成后将停止"
                 print(f"[取消] 已标记任务 {tid!r} 取消 (status={status})", flush=True)
                 return True
         print(f"[取消] 未找到可取消任务: task_id={tid!r}, status={status}", flush=True)
         return False
+
+    def delete_task(self, task_id: str) -> bool:
+        """从结果中移除该任务（仅移除记录，若任务在队列中仍会被 worker 取出后跳过）。返回是否找到并已删除。"""
+        tid = (task_id or "").strip()
+        if not tid:
+            return False
+        with self.lock:
+            if tid in self.results:
+                del self.results[tid]
+                print(f"[删除] 已移除任务记录: {tid!r}", flush=True)
+                return True
+        return False
+
+    def get_task_id_by_suffix(self, suffix: str) -> Optional[str]:
+        """根据任务 ID 或后 8 位短 ID 解析出完整 task_id。未找到返回 None。"""
+        s = (suffix or "").strip()
+        if not s:
+            return None
+        s_lower = s.lower()
+        with self.lock:
+            if s in self.results:
+                return s
+            for tid in self.results:
+                if tid.lower().endswith(s_lower) or tid.lower() == s_lower:
+                    return tid
+        return None
 
     def get_queue_size(self) -> int:
         """获取队列中的任务数（不包括正在执行的）"""
@@ -172,7 +203,19 @@ class ProcessingQueue:
         """处理队列中的任务"""
         while True:
             task_id = self.queue.get()
-            task_result = self.results[task_id]
+            task_result = self.results.get(task_id)
+            # 任务可能已被删除（delete_task 移除了记录）
+            if task_result is None:
+                self.queue.task_done()
+                continue
+            # 若已在取消队列时被置为 cancelled，直接跳过执行并 task_done
+            with self.lock:
+                if task_result.get("cancel_requested") or task_result.get("status") == "cancelled":
+                    task_result["status"] = "cancelled"
+                    task_result["status_info"] = "用户取消"
+                    print(f"[取消] 任务 {task_id} 已取消（从队列取出时已标记取消）", flush=True)
+                    self.queue.task_done()
+                    continue
             try:
                 with self.lock:
                     task_result["status"] = "processing"
@@ -438,6 +481,40 @@ class ProcessingQueue:
                 # 更新访问时间，避免被清理
                 result["last_accessed"] = time.time()
             return result
+
+    def get_all_tasks_summary(self) -> List[Dict]:
+        """获取所有任务摘要，用于任务详情表格。按提交时间倒序（最近在上）。"""
+        status_display_map = {
+            "queued": "排队中",
+            "processing": "处理中",
+            "completed": "已完成",
+            "error": "错误",
+            "cancelled": "已取消",
+            "not_found": "未知",
+        }
+        with self.lock:
+            items = []
+            for tid, data in self.results.items():
+                status = data.get("status", "not_found")
+                status_display = status_display_map.get(status, status)
+                files = data.get("files") or []
+                if files:
+                    files_info = f"{len(files)} 个文件" if len(files) > 1 else os.path.basename(files[0])
+                else:
+                    files_info = "-"
+                ts = data.get("timestamp") or data.get("last_accessed") or 0
+                submit_time = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else "-"
+                task_id_short = tid[-8:] if len(tid) >= 8 else tid
+                items.append({
+                    "task_id": tid,
+                    "task_id_short": task_id_short,
+                    "status": status,
+                    "status_display": status_display,
+                    "files_info": files_info,
+                    "submit_time": submit_time,
+                })
+            items.sort(key=lambda x: x["submit_time"], reverse=True)
+        return items
 
     def _cleanup_results(self):
         """定期清理过期或过多的结果"""
