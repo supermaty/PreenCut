@@ -3,6 +3,7 @@ import zhconv
 
 from modules.speech_recognizers.speech_recognizer import SpeechRecognizer
 from config import (
+    FASTER_WHISPER_USE_BATCHED_PIPELINE,
     WHISPER_INITIAL_PROMPT,
     VAD_MIN_SILENCE_DURATION_MS,
 )
@@ -39,6 +40,15 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
                                                      device=self.device,
                                                      device_index=self.device_index,
                                                      compute_type=self.compute_type)
+        self.batched_pipeline = None
+        if (
+            FASTER_WHISPER_USE_BATCHED_PIPELINE
+            and hasattr(faster_whisper, "BatchedInferencePipeline")
+        ):
+            self.batched_pipeline = faster_whisper.BatchedInferencePipeline(
+                model=self.model
+            )
+        print(f"batched pipeline = {self.batched_pipeline is not None}")
 
     def transcribe(self, audio_path: str):
         """将音频文件转录为文本"""
@@ -53,6 +63,9 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             vad_filter=True,
             beam_size=self.beam_size,
         )
+        if self.batched_pipeline is not None:
+            kwargs["batch_size"] = self.batch_size
+            kwargs["without_timestamps"] = False
         if WHISPER_INITIAL_PROMPT:
             kwargs["initial_prompt"] = WHISPER_INITIAL_PROMPT
         if self.language is not None:
@@ -61,7 +74,8 @@ class FasterWhisperSpeechRecognizer(SpeechRecognizer):
             kwargs["vad_parameters"] = dict(
                 min_silence_duration_ms=VAD_MIN_SILENCE_DURATION_MS,
             )
-        segments, info = self.model.transcribe(audio, **kwargs)
+        transcriber = self.batched_pipeline or self.model
+        segments, info = transcriber.transcribe(audio, **kwargs)
 
         segment_list = []
 

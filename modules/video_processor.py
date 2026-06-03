@@ -1,5 +1,6 @@
 import os
 import subprocess
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import TEMP_FOLDER
 from typing import List, Dict
@@ -33,15 +34,38 @@ class VideoProcessor:
         task_temp_dir = os.path.join(TEMP_FOLDER, task_id)
         os.makedirs(task_temp_dir, exist_ok=True)
         base_name = os.path.splitext(os.path.basename(video_path))[0]
-        audio_path = os.path.join(task_temp_dir, f"{base_name}.wav")
+        safe_base_name = generate_safe_filename(base_name, max_length=80) or "audio"
+        audio_path = os.path.join(
+            task_temp_dir,
+            f"{safe_base_name}_{uuid.uuid4().hex[:8]}.wav"
+        )
 
         cmd = [
-            'ffmpeg', '-i', video_path,
-            '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+            'ffmpeg', '-err_detect', 'ignore_err', '-fflags', '+discardcorrupt',
+            '-i', video_path,
+            '-vn', '-map', '0:a:0', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
             '-y', audio_path
         ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+        )
+        if result.returncode != 0 and os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
+            print(
+                "FFmpeg returned a non-zero status while extracting audio, "
+                "but a usable WAV file was created. Continuing with the extracted audio. "
+                f"input={video_path}, output={audio_path}, returncode={result.returncode}"
+            )
+            return audio_path
+        if result.returncode != 0:
+            raise RuntimeError(
+                "音频提取失败: "
+                f"input={video_path}, output={audio_path}, "
+                f"returncode={result.returncode}, stderr={result.stderr}"
+            )
         return audio_path
 
     @staticmethod

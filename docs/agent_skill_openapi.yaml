@@ -1,0 +1,271 @@
+openapi: 3.0.3
+info:
+  title: PreenCut Agent API
+  version: 1.0.0
+  description: >
+    API for external agents to upload livestream videos, run PreenCut processing,
+    poll task status, fetch structured results, and download generated reports.
+servers:
+  - url: http://localhost:7861
+paths:
+  /api/agent/health:
+    get:
+      summary: Health check and capability discovery
+      operationId: getPreenCutAgentHealth
+      responses:
+        "200":
+          description: Service capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/agent/tasks:
+    post:
+      summary: Upload a video or audio file and create a processing task
+      operationId: createPreenCutTask
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                llm_model:
+                  type: string
+                  default: gemini-3
+                prompt:
+                  type: string
+                whisper_model_size:
+                  type: string
+                  default: large-v3-turbo
+                temperature:
+                  type: number
+                  default: 1.0
+                enable_alignment:
+                  type: boolean
+                  default: true
+                max_line_length:
+                  type: integer
+                  default: 32
+                segment_filter_mode:
+                  type: string
+                  enum:
+                    - all_mentions
+                    - strong_only
+                    - strong_and_weak
+                    - non_negative_mentions
+                  default: all_mentions
+                enable_second_pass_review:
+                  type: boolean
+                  default: false
+                  deprecated: true
+                  description: Kept for backward compatibility. Two-stage LLM labeling is now always enabled.
+      responses:
+        "200":
+          description: Queued task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTask"
+  /api/agent/tasks/from-path:
+    post:
+      summary: Create a processing task from a file path on the PreenCut server
+      operationId: createPreenCutTaskFromPath
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - file_path
+              properties:
+                file_path:
+                  type: string
+                llm_model:
+                  type: string
+                  default: gemini-3
+                prompt:
+                  type: string
+                whisper_model_size:
+                  type: string
+                  default: large-v3-turbo
+                temperature:
+                  type: number
+                  default: 1.0
+                enable_alignment:
+                  type: boolean
+                  default: true
+                max_line_length:
+                  type: integer
+                  default: 32
+                segment_filter_mode:
+                  type: string
+                  enum:
+                    - all_mentions
+                    - strong_only
+                    - strong_and_weak
+                    - non_negative_mentions
+                  default: all_mentions
+                enable_second_pass_review:
+                  type: boolean
+                  default: false
+                  deprecated: true
+                  description: Kept for backward compatibility. Two-stage LLM labeling is now always enabled.
+      responses:
+        "200":
+          description: Queued task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTask"
+  /api/agent/tasks/{task_id}:
+    get:
+      summary: Query task progress
+      operationId: getPreenCutTaskStatus
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStatus"
+  /api/agent/tasks/{task_id}/result:
+    get:
+      summary: Fetch structured result after task completion
+      operationId: getPreenCutTaskResult
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResult"
+  /api/agent/tasks/{task_id}/artifacts/{artifact_name}:
+    get:
+      summary: Download a generated artifact
+      operationId: downloadPreenCutArtifact
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: artifact_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File download
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+components:
+  schemas:
+    QueuedTask:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+        poll_url:
+          type: string
+        result_url:
+          type: string
+    TaskStatus:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - processing
+            - completed
+            - error
+            - cancelled
+            - not_found
+        progress:
+          type: number
+        status_info:
+          type: string
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+    TaskResult:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatus"
+        - type: object
+          properties:
+            summary_report:
+              type: string
+            files:
+              type: array
+              items:
+                type: object
+            segments:
+              type: array
+              items:
+                $ref: "#/components/schemas/Segment"
+            transcript_documents:
+              type: array
+              items:
+                type: object
+    Segment:
+      type: object
+      properties:
+        filename:
+          type: string
+        start:
+          type: number
+        end:
+          type: number
+        duration:
+          type: number
+        start_hms:
+          type: string
+        end_hms:
+          type: string
+        summary:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        relevance_level:
+          type: string
+        intent:
+          type: string
+    Artifact:
+      type: object
+      properties:
+        name:
+          type: string
+        download_url:
+          type: string

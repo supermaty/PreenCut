@@ -4,8 +4,11 @@ import subprocess
 import json
 import csv
 import re
+import time
 import torch
 import gc
+import zipfile
+from xml.sax.saxutils import escape as xml_escape
 from typing import List, Dict
 
 
@@ -247,6 +250,88 @@ def write_to_txt(text: str, output_dir: str,
     return file_path
 
 
+def _docx_paragraph_xml(text: str) -> str:
+    cleaned = str(text or "").replace("#", "").strip()
+    if not cleaned:
+        cleaned = " "
+    return (
+        "<w:p><w:r><w:t xml:space=\"preserve\">"
+        f"{xml_escape(cleaned)}"
+        "</w:t></w:r></w:p>"
+    )
+
+
+def write_transcript_report_docx(
+    transcript_reports: List[Dict],
+    output_dir: str,
+    filename: str = "transcript_report.docx",
+) -> str:
+    os.makedirs(output_dir, exist_ok=True)
+
+    suffix = filename.split(".")[-1]
+    files_in_dir = os.listdir(output_dir)
+    while filename in files_in_dir:
+        filename = filename.rsplit(".", 1)[0] + "_duplicate" + "." + suffix
+    file_path = os.path.join(output_dir, filename)
+
+    paragraphs = ["直播文稿总结与字幕内容"]
+    if not transcript_reports:
+        paragraphs.append("本次任务没有生成可用的文稿内容。")
+
+    for report in transcript_reports or []:
+        report = report or {}
+        filename_text = report.get("filename") or "未命名文件"
+        summary = str(report.get("summary") or "本文件没有生成总结。")
+        transcript = str(report.get("transcript") or "本文件没有生成字幕内容。")
+
+        paragraphs.append(f"文件：{filename_text}")
+        paragraphs.append("总结")
+        paragraphs.extend([
+            line.strip()
+            for line in summary.replace("#", "").splitlines()
+            if line.strip()
+        ])
+        paragraphs.append("字幕文件的内容")
+        transcript_paragraph = " ".join(
+            line.strip()
+            for line in transcript.replace("#", "").splitlines()
+            if line.strip()
+        )
+        paragraphs.append(transcript_paragraph)
+
+    body_xml = "".join(_docx_paragraph_xml(paragraph) for paragraph in paragraphs)
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body>{body_xml}<w:sectPr/></w:body>"
+        "</w:document>"
+    )
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        "</Types>"
+    )
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="word/document.xml"/>'
+        "</Relationships>"
+    )
+
+    with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr("[Content_Types].xml", content_types_xml)
+        docx.writestr("_rels/.rels", rels_xml)
+        docx.writestr("word/document.xml", document_xml)
+
+    return file_path
+
+
 def write_to_csv(display_result: list, output_dir: str,
                  filename: str = "output.csv",
                  header: list = ["文件名", "开始时间", "结束时间", "时长",
@@ -276,7 +361,7 @@ def write_to_csv(display_result: list, output_dir: str,
     file_path = os.path.join(output_dir, filename)
 
     # 写入 CSV 文件
-    with open(file_path, mode="w", newline="", encoding="utf-8") as csvfile:
+    with open(file_path, mode="w", newline="", encoding="utf-8-sig") as csvfile:
         writer = csv.writer(csvfile)
 
         # 写入表头（可选，如果需要列名可以在这里添加）

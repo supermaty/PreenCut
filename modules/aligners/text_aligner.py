@@ -6,6 +6,7 @@ import torch
 from modules.word_segmenter import WordSegmenter
 
 from config import (
+    ALIGNMENT_BATCH_SIZE,
     ALIGNMENT_MODEL,
     WHISPER_DEVICE,
     ALIGNMENT_DEVICE,
@@ -160,7 +161,7 @@ class TextAligner:
         text = process_ctc_text(segments, self.language_code,
                                 self.word_segmenter, self.max_line_length)
         emissions, stride = generate_emissions(
-            alignment_model, audio_waveform, batch_size=16
+            alignment_model, audio_waveform, batch_size=ALIGNMENT_BATCH_SIZE
         )
         code_639_3 = to_639_3(self.language_code)
         tokens_starred, text_starred = preprocess_text(

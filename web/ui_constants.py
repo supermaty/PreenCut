@@ -14,7 +14,7 @@ TASK_SELECT_CHECKED = '<span class="preencut-cell-checkbox preencut-checkbox-che
 TASK_SELECT_UNCHECKED = '<span class="preencut-cell-checkbox" style="display:inline-block;width:16px;height:16px;border:2px solid #1C1917;background:#f5f5f5;color:#1C1917;vertical-align:middle"></span>'
 
 # 空 Dataframe 占位，避免 Gradio 将 [] 序列化为 '' 导致 DataframeData 校验报错
-EMPTY_RESULT_TABLE: List[List] = [["", "", "", "", "", ""]]
-EMPTY_SEGMENT_SELECTION: List[List] = [[CHECKBOX_UNCHECKED, "", "", "", "", "", ""]]
+EMPTY_RESULT_TABLE: List[List] = [["", "", "", "", "", "", "", ""]]
+EMPTY_SEGMENT_SELECTION: List[List] = [[CHECKBOX_UNCHECKED, "", "", "", "", "", "", "", ""]]
 
 DEFAULT_ENABLE_ALIGNMENT = "开启" if ENABLE_ALIGNMENT else "关闭"

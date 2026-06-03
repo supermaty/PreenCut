@@ -4,7 +4,12 @@ import time
 import random
 import zipfile
 import gradio as gr
-from config import LLM_MODEL_OPTIONS, ENABLE_ALIGNMENT
+from config import (
+    LLM_MODEL_OPTIONS,
+    ENABLE_ALIGNMENT,
+    ENABLE_SECOND_PASS_REVIEW,
+    SEGMENT_FILTER_MODE,
+)
 from config import (
     TEMP_FOLDER,
     OUTPUT_FOLDER,
@@ -20,7 +25,7 @@ from modules.video_processor import VideoProcessor
 from utils import seconds_to_hhmmss, hhmmss_to_seconds, clear_directory_fast \
     , generate_safe_filename, write_to_srt, write_to_csv, \
     get_srt_from_ctc_result, \
-    write_to_txt, process_chinese_punctuation
+    write_to_txt, write_transcript_report_docx, process_chinese_punctuation
 from typing import List, Dict, Tuple, Optional
 import subprocess
 
@@ -39,45 +44,153 @@ from web.ui_constants import (
 processing_queue = ProcessingQueue()
 
 
+RESULT_TABLE_HEADERS = [
+    "文件名",
+    "开始时间",
+    "结束时间",
+    "时长",
+    "内容摘要",
+    "标签",
+    "相关度",
+    "意图",
+]
+
+SEGMENT_SELECTION_HEADERS = ["选择"] + RESULT_TABLE_HEADERS
+
+
+def _segment_to_display_row(filename: str, seg: Dict) -> List[str]:
+    return [
+        filename,
+        f"{seconds_to_hhmmss(seg['start'])}",
+        f"{seconds_to_hhmmss(seg['end'])}",
+        f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",
+        seg.get("summary", ""),
+        ", ".join(seg["tags"]) if isinstance(seg.get("tags"), list) else seg.get("tags", ""),
+        seg.get("relevance_level", ""),
+        seg.get("intent", ""),
+    ]
+
+
+def _segments_to_text(segments: List[Dict], text_field: str) -> str:
+    lines = []
+    for segment in segments or []:
+        text = segment.get(text_field)
+        if text is None and text_field != "text":
+            text = segment.get("text")
+        text = str(text or "").strip()
+        if text:
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def _copy_align_result_with_text_field(align_result: Dict, text_field: str) -> Dict:
+    copied_result = dict(align_result or {})
+    copied_segments = []
+    for segment in copied_result.get("segments", []) or []:
+        copied_segment = dict(segment)
+        copied_segment["text"] = (
+            copied_segment.get(text_field)
+            or copied_segment.get("text")
+            or ""
+        )
+        copied_segments.append(copied_segment)
+    copied_result["segments"] = copied_segments
+    return copied_result
+
+
+FILTER_MODE_CHOICES = [
+    ("全部相关提及（含负面）", "all_mentions", False),
+    ("仅强相关", "strong_only", False),
+    ("强相关 + 弱相关", "strong_and_weak", False),
+    ("强相关 + 弱相关 + 仅提及（排除负面）", "non_negative_mentions", False),
+]
+
+FILTER_MODE_LABEL_TO_VALUE = {
+    label: value for label, value, _ in FILTER_MODE_CHOICES
+}
+FILTER_MODE_LABEL_TO_SECOND_PASS = {
+    label: second_pass for label, _, second_pass in FILTER_MODE_CHOICES
+}
+FILTER_MODE_VALUE_TO_LABEL = {}
+for label, value, second_pass in FILTER_MODE_CHOICES:
+    if not second_pass and value not in FILTER_MODE_VALUE_TO_LABEL:
+        FILTER_MODE_VALUE_TO_LABEL[value] = label
+
+def _wait_for_media_file_ready(
+    file_path: str,
+    timeout_seconds: float = 15.0,
+    stable_checks: int = 2,
+    poll_interval_seconds: float = 0.5,
+) -> Optional[float]:
+    from utils import get_media_duration
+
+    deadline = time.time() + timeout_seconds
+    last_size = -1
+    stable_count = 0
+    last_duration = None
+
+    while time.time() < deadline:
+        if not os.path.exists(file_path):
+            time.sleep(poll_interval_seconds)
+            continue
+
+        current_size = os.path.getsize(file_path)
+        if current_size > 0 and current_size == last_size:
+            stable_count += 1
+        else:
+            stable_count = 0
+        last_size = current_size
+
+        duration = get_media_duration(file_path)
+        if duration is not None:
+            last_duration = duration
+            if stable_count >= stable_checks:
+                return duration
+
+        time.sleep(poll_interval_seconds)
+
+    return last_duration
+
+
 def check_uploaded_files(files: List) -> str:
-    """检查上传的文件是否符合要求"""
+    """Validate uploaded files before the task enters the processing queue."""
     if not files:
-        raise gr.Error("请上传至少一个文件")
+        raise gr.Error("???????????")
 
     if len(files) > MAX_FILE_NUMBERS:
         raise gr.Error(
-            f"上传的文件数量超过限制 ({len(files)} > {MAX_FILE_NUMBERS})")
+            f"?????? {MAX_FILE_NUMBERS} ??????? {len(files)} ??"
+        )
 
     saved_paths = []
     for file in files:
         filename = os.path.basename(file.name)
 
-        # 检查文件大小
         file_size = os.path.getsize(file.name)
         if file_size > MAX_FILE_SIZE:
-            raise gr.Error(f"文件大小超过限制 ({file_size} > {MAX_FILE_SIZE})")
+            raise gr.Error(f"???????? ({file_size} > {MAX_FILE_SIZE})")
 
-        # 检查文件格式
         ext = os.path.splitext(filename)[1][1:].lower()
         if ext not in ALLOWED_EXTENSIONS:
             raise gr.Error(
-                f"不支持的文件格式: {ext}, 仅支持: {', '.join(ALLOWED_EXTENSIONS)}")
+                f"????????: {ext}, ????: {', '.join(ALLOWED_EXTENSIONS)}"
+            )
 
-        # 检查文件时长
-        from utils import get_media_duration
-        duration = get_media_duration(file.name)
-        if duration is not None:
-            if duration > MAX_DURATION_SECONDS:
-                duration_minutes = duration / 60
-                max_minutes = MAX_DURATION_SECONDS / 60
-                raise gr.Error(
-                    f"文件时长超过限制: {filename}\n"
-                    f"当前时长: {duration_minutes:.1f} 分钟\n"
-                    f"最大允许时长: {max_minutes} 分钟"
-                )
-        # 如果无法获取时长（可能是文件损坏或格式问题），给出警告但不阻止
-        elif duration is None:
-            print(f"警告: 无法获取文件时长: {filename}")
+        duration = _wait_for_media_file_ready(file.name)
+        if duration is None:
+            raise gr.Error(
+                f"?????????????: {filename}\n"
+                "????????? ffmpeg / ??????????????"
+            )
+
+        if duration > MAX_DURATION_SECONDS:
+            duration_minutes = duration / 60
+            max_minutes = MAX_DURATION_SECONDS / 60
+            raise gr.Error(
+                f"????????: {filename}\n"
+                f"????: {duration_minutes:.1f} ??\n"
+                f"??????: {max_minutes} ??"
+            )
 
         saved_paths.append(file.name)
 
@@ -88,7 +201,8 @@ def process_files(files: List, llm_model: str,
                   temperature: float,
                   prompt: Optional[str] = None,
                   whisper_model_size: Optional[str] = None,
-                  enable_alignment=None, max_line_length=32) -> Tuple[
+                  enable_alignment=None, max_line_length=32,
+                  segment_filter_mode="全部相关提及（含负面）") -> Tuple[
     str, Dict, float, Optional[List]]:
     """处理上传的文件，返回 (task_id, status_display, progress_initial, file_upload_clear)."""
     # 检查上传的文件是否符合要求
@@ -119,10 +233,21 @@ def process_files(files: List, llm_model: str,
         enable_alignment = True
     else:
         enable_alignment = False
+    selected_filter_label = segment_filter_mode
+    enable_second_pass_review = FILTER_MODE_LABEL_TO_SECOND_PASS.get(
+        selected_filter_label,
+        ENABLE_SECOND_PASS_REVIEW,
+    )
+    segment_filter_mode = FILTER_MODE_LABEL_TO_VALUE.get(
+        segment_filter_mode,
+        SEGMENT_FILTER_MODE,
+    )
     processing_queue.add_task(task_id, saved_paths, llm_model, prompt,
                               temperature,
                               whisper_model_size, enable_alignment,
-                              max_line_length)
+                              max_line_length,
+                              enable_second_pass_review,
+                              segment_filter_mode)
 
     status_msg = f"已加入队列，共 {len(saved_paths)} 个文件，请稍候..."
     if dup_count > 0:
@@ -315,7 +440,12 @@ def check_status(
     """检查任务状态，返回 (..., task_detail_rows, task_ids_list, timer)."""
     task_detail_rows, task_ids_list = get_task_detail_list(selected_task_id)
     result = processing_queue.get_result(task_id)
-    progress = result.get("progress", 0.0)
+    try:
+        progress = float(result.get("progress", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        progress = 0.0
+    if result.get("status") != "completed":
+        progress = min(progress, 0.99)
 
     if result["status"] == "completed":
         # 整理结果以便显示
@@ -327,19 +457,21 @@ def check_status(
         subtitle_paths = []  # 可下载的字幕文件
         for file_result in result["result"]:
             asr_result += f"FileName：{file_result['filename']}\n=======================\n"
-            text = '\n'.join([text['text'] for text in
-                              file_result['align_result']['segments']])
-            if file_result['align_result'].get('language') == 'zh':
+            align_result = file_result['align_result']
+            segments = align_result['segments']
+            base_filename = file_result['filename'].split('.')[0]
+            text = _segments_to_text(segments, "raw_text")
+            corrected_text = _segments_to_text(segments, "corrected_text")
+            if align_result.get('language') == 'zh':
                 text = process_chinese_punctuation(text)
+                corrected_text = process_chinese_punctuation(corrected_text)
+            has_corrected_text_diff = (
+                corrected_text.strip()
+                and corrected_text.strip() != text.strip()
+            )
             asr_result += text + '\n\n'
             for seg in file_result["segments"]:
-                row = [file_result["filename"],
-                       f"{seconds_to_hhmmss(seg['start'])}",
-                       f"{seconds_to_hhmmss(seg['end'])}",
-                       f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",
-                       seg["summary"],
-                       ", ".join(seg["tags"]) if isinstance(
-                           seg["tags"], list) else seg["tags"]]
+                row = _segment_to_display_row(file_result["filename"], seg)
                 clip_row = row.copy()
                 clip_row.insert(0, CHECKBOX_UNCHECKED)  # 添加选择框
                 display_result.append(row)
@@ -347,35 +479,70 @@ def check_status(
 
             asr_path = write_to_txt(
                 text, output_dir=task_output_dir,
-                filename=file_result['filename'].split('.')[0] + '.txt'
+                filename=base_filename + '.txt'
             )
             subtitle_paths.append(asr_path)
+
+            if has_corrected_text_diff:
+                corrected_txt_path = write_to_txt(
+                    corrected_text, output_dir=task_output_dir,
+                    filename=base_filename + '_corrected.txt'
+                )
+                subtitle_paths.append(corrected_txt_path)
 
             # 保存当前视/音频的srt字幕文件
             if enable_alignment == "开启":
                 if ALIGNMENT_MODEL == 'ctc-forced-aligner':
                     # 使用ctc-forced-aligner生成srt
                     srt_path = get_srt_from_ctc_result(
-                        file_result['align_result'],
+                        align_result,
                         max_line_length=max_line_length,
                         output_dir=task_output_dir,
-                        filename=file_result['filename'].split('.')[
-                                     0] + '.srt')
+                        filename=base_filename + '.srt')
                 else:
-                    srt_path = write_to_srt(file_result['align_result'],
+                    srt_path = write_to_srt(align_result,
                                             max_line_length=max_line_length,
                                             output_dir=task_output_dir,
-                                            filename=
-                                            file_result['filename'].split('.')[
-                                                0] + '.srt')
+                                            filename=base_filename + '.srt')
                 subtitle_paths.append(srt_path)
 
+                if has_corrected_text_diff:
+                    corrected_align_result = _copy_align_result_with_text_field(
+                        align_result,
+                        "corrected_text",
+                    )
+                    corrected_srt_path = get_srt_from_ctc_result(
+                        corrected_align_result,
+                        max_line_length=max_line_length,
+                        output_dir=task_output_dir,
+                        filename=base_filename + '_corrected.srt',
+                    )
+                    subtitle_paths.append(corrected_srt_path)
+
         # 将结果保存到csv文件
-        result_path = write_to_csv(display_result, output_dir=task_output_dir,
-                                   filename="result.csv")
+        result_path = write_to_csv(
+            display_result,
+            output_dir=task_output_dir,
+            filename="result.csv",
+            header=RESULT_TABLE_HEADERS,
+        )
+        summary_report_path = write_to_txt(
+            result.get("summary_report") or "本次任务没有生成总结文稿。",
+            output_dir=task_output_dir,
+            filename="summary_report.txt",
+        )
+        transcript_report_path = write_transcript_report_docx(
+            [
+                file_result.get("transcript_document")
+                for file_result in result["result"]
+                if file_result.get("transcript_document")
+            ],
+            output_dir=task_output_dir,
+            filename="transcript_report.docx",
+        )
 
         return (
-            result_path,
+            [result_path, summary_report_path, transcript_report_path],
             subtitle_paths,
             {"task_id": task_id, "status": "处理完成",
              "raw_result": result["result"],
@@ -606,7 +773,8 @@ def start_reanalyze() -> Dict:
 
 
 def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
-                          new_prompt: str, temperature: float) -> Tuple[
+                          new_prompt: str, temperature: float,
+                          segment_filter_mode="全部相关提及（含负面）") -> Tuple[
     Dict, List[List], List[List]]:
     """使用新的提示重新分析"""
     if not task_id:
@@ -624,12 +792,25 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
     try:
         # 使用新提示重新处理
         from modules.llm_processor import LLMProcessor
-        llm = LLMProcessor(reanalyze_llm_model, temperature)
+        selected_filter_label = segment_filter_mode
+        enable_second_pass_review = FILTER_MODE_LABEL_TO_SECOND_PASS.get(
+            selected_filter_label,
+            ENABLE_SECOND_PASS_REVIEW,
+        )
+        llm = LLMProcessor(
+            reanalyze_llm_model,
+            temperature,
+            enable_second_pass_review,
+            FILTER_MODE_LABEL_TO_VALUE.get(segment_filter_mode, SEGMENT_FILTER_MODE),
+        )
         updated_results = []
 
         for file_data in task_result["result"]:
-            new_segments = llm.segment_video(file_data["align_result"],
-                                             new_prompt)
+            llm_input = _copy_align_result_with_text_field(
+                file_data["align_result"],
+                "corrected_text",
+            )
+            new_segments = llm.segment_video(llm_input, new_prompt)
             updated_results.append({
                 "filename": file_data["filename"],
                 "filepath": file_data["filepath"],
@@ -642,13 +823,7 @@ def reanalyze_with_prompt(task_id: str, reanalyze_llm_model: str,
         clip_result = []
         for file_result in updated_results:
             for seg in file_result["segments"]:
-                row = [file_result["filename"],
-                       f"{seconds_to_hhmmss(seg['start'])}",
-                       f"{seconds_to_hhmmss(seg['end'])}",
-                       f"{seconds_to_hhmmss(seg['end'] - seg['start'])}",
-                       seg["summary"],
-                       ", ".join(seg["tags"]) if isinstance(
-                           seg["tags"], list) else seg["tags"]]
+                row = _segment_to_display_row(file_result["filename"], seg)
                 clip_row = row.copy()
                 clip_row.insert(0, CHECKBOX_UNCHECKED)  # 添加选择框
                 display_result.append(row)
@@ -727,6 +902,14 @@ def create_gradio_interface():
                                                 value=32,
                                                 label="单条字幕最大长度(仅对中文有效)",
                                                 visible=True)
+                    segment_filter_mode = gr.Dropdown(
+                        choices=[label for label, _, _ in FILTER_MODE_CHOICES],
+                        value=FILTER_MODE_VALUE_TO_LABEL.get(
+                            SEGMENT_FILTER_MODE,
+                            "全部相关提及（含负面）",
+                        ),
+                        label="结果保留范围",
+                    )
 
                 prompt_input = gr.Textbox(
                     label="自定义分析提示 (可选)",
@@ -758,9 +941,8 @@ def create_gradio_interface():
                     with gr.Tab("分析结果"):
                         file_download = gr.File(label="下载分析结果")
                         result_table = gr.Dataframe(
-                            headers=["文件名", "开始时间", "结束时间", "时长",
-                                     "内容摘要", "标签"],
-                            datatype=["str", "str", "str", "str", "str", "str", "str"],
+                            headers=RESULT_TABLE_HEADERS,
+                            datatype=["str"] * len(RESULT_TABLE_HEADERS),
                             interactive=True,
                             wrap=True,
                             max_height=420,
@@ -843,13 +1025,19 @@ def create_gradio_interface():
                         reanlyze_temperature = gr.Slider(minimum=0.1, maximum=1.5,
                                                          step=0.1, value=1,
                                                          label="摘要生成灵活度(temperature)")
+                        reanalyze_segment_filter_mode = gr.Dropdown(
+                            choices=[label for label, _, _ in FILTER_MODE_CHOICES],
+                            value=FILTER_MODE_VALUE_TO_LABEL.get(
+                                SEGMENT_FILTER_MODE,
+                                "全部相关提及（含负面）",
+                            ),
+                            label="结果保留范围",
+                        )
                         reanalyze_btn = gr.Button("重新分析", variant="secondary")
 
                     with gr.Tab("剪辑选项"):
                         segment_selection = gr.Dataframe(
-                            headers=["选择", "文件名", "开始时间", "结束时间",
-                                     "时长",
-                                     "内容摘要", "标签"],
+                            headers=SEGMENT_SELECTION_HEADERS,
                             datatype='html',
                             interactive=False,
                             wrap=True,
@@ -935,7 +1123,8 @@ def create_gradio_interface():
         process_btn.click(
             process_files,
             inputs=[file_upload, llm_model, temperature, prompt_input,
-                    model_size, alignment, max_line_length],
+                    model_size, alignment, max_line_length,
+                    segment_filter_mode],
             outputs=[task_id, status_display, progress_bar, file_upload],
         ).then(
             lambda: gr.Timer(active=True),
@@ -963,7 +1152,7 @@ def create_gradio_interface():
         ).then(
             reanalyze_with_prompt,
             inputs=[task_id, reanalyze_llm_model, new_prompt,
-                    reanlyze_temperature],
+                    reanlyze_temperature, reanalyze_segment_filter_mode],
             outputs=[status_display, result_table, segment_selection],
             show_progress="hidden"
         )

@@ -24,6 +24,7 @@ class SpeechRecognizerFactory:
                 WHISPER_DEVICE,
                 compute_type=WHISPER_COMPUTE_TYPE,
                 device_index=WHISPER_GPU_IDS,
+                batch_size=WHISPER_BATCH_SIZE,
                 beam_size=FASTER_WHISPER_BEAM_SIZE,
                 language=WHISPER_LANGUAGE
             )

@@ -75,6 +75,8 @@ print(f"  计算类型: {config.WHISPER_COMPUTE_TYPE}")
 print(f"  使用GPU: {config.WHISPER_GPU_IDS}")
 print(f"  批处理大小: {config.WHISPER_BATCH_SIZE}")
 print(f"  单文件最大时长: {config.MAX_DURATION_SECONDS / 60:.0f} 分钟 ({config.MAX_DURATION_SECONDS} 秒)")
+print(f"  文本对齐模型: {config.ALIGNMENT_MODEL}")
+print(f"  文本对齐设备: {config.ALIGNMENT_DEVICE}")
 
 # 创建Gradio界面
 gradio_app = create_gradio_interface()
